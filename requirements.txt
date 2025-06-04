@@ -1,0 +1,6 @@
+modal>=1.0.2
+fastapi
+gradio
+openai
+requests
+python-dotenv
