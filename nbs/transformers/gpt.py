@@ -136,10 +136,13 @@ class Block(nn.Module):
         head_size = n_embed // num_heads
         self.sa = MultiHeadAttention(num_heads=num_heads, head_size=head_size)
         self.ffwd = FeedForward(n_embed)
+        self.ln1 = nn.LayerNorm(n_embed)
+        self.ln2 = nn.LayerNorm(n_embed)
 
     def forward(self, x):
-        x = x + self.sa(x)  # residual connection
-        x = x + self.ffwd(x)  # residual connection
+        # post-layer normalization
+        x = self.ln1(x) + self.sa(x)  # residual connection
+        x = self.ln2(x) + self.ffwd(x)  # residual connection
         return x
 
 
@@ -156,7 +159,9 @@ class BigramLanguageModel(nn.Module):
             num_heads=4, head_size=n_embed // 4
         )  # i.e. 4 heads of 8 dimensions self-attention
         self.ffwd = FeedForward(n_embed)
-        self.blocks = nn.Sequential(*[Block(n_embed, 4) for _ in range(3)])
+        self.blocks = nn.Sequential(
+            *[Block(n_embed, 4) for _ in range(3)], nn.LayerNorm(n_embed)
+        )
 
     def forward(self, inputs, targets=None):
         # inputs: (batch_size, sequence_length)

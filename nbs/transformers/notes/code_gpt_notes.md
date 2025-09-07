@@ -37,4 +37,17 @@
 
 - They are initialized that way so in the beginning they are sort of almost kind of like not there, but then during the optimization they come online over time and they start to contribute. But at least at the initialization you can go from directly supervision to the input - gradient is unimpeded and just flows, and then the blocks over time kick in. That dramatically helps with the optimization.
 
-### Implementation
+## Layer Normalization
+
+- Layer normalization, is the second crutial optimizations and is a crucial component of the Transformer architecture.
+
+- In batch normalization, we normalize across the batch dimension. For any individual neuron, we ensure it has zero mean and unit standard deviation across all examples in the batch. This means we're normalizing columns - each feature dimension is normalized independently across all samples.
+
+- However, layer normalization works differently. Instead of normalizing across the batch dimension, we normalize across the feature dimension for each individual example. This means we're normalizing rows - each sample's features are normalized independently.
+
+- The implementation is surprisingly simple. If we had batch normalization code that normalizes across dimension 0 (batch dimension), we just change it to normalize across dimension 1 (feature dimension) to get layer normalization.
+
+- Layer normalization has several advantages over batch normalization in the context of Transformers:
+    - **No dependency on batch size**: Layer norm works the same regardless of batch size, even with a batch size of 1
+    - **Simpler implementation and tracking**: We don't need to maintain running mean and variance buffers. There's no distinction between training and test time
+    - **Better for sequence models**: Each token's features are normalized independently, which is more appropriate for language modeling
