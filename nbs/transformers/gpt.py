@@ -104,22 +104,43 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, num_heads, head_size):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
+        # projection layer: allows the model to learn how to combine information from multiple attention heads into a unified representation for the residual pathway
+        self.proj = nn.Linear(n_embed, n_embed)
 
     def forward(self, x):
         # output size: (batch_size, sequence_length, num_heads * head_size)
-        return torch.cat([h(x) for h in self.heads], dim=-1)
+        out = torch.cat([h(x) for h in self.heads], dim=-1)
+        out = self.proj(out)
+        return out
 
 
 class FeedForward(nn.Module):
     def __init__(self, n_embed):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(n_embed, n_embed),
+            # 4* to match the Transformer paper
+            nn.Linear(n_embed, 4 * n_embed),
             nn.ReLU(),
+            nn.Linear(4 * n_embed, n_embed),
         )
 
     def forward(self, x):
         return self.net(x)
+
+
+class Block(nn.Module):
+    """Transfformer Block: communication (MHA) followed by computation (FFN)"""
+
+    def __init__(self, n_embed, num_heads):
+        super().__init__()
+        head_size = n_embed // num_heads
+        self.sa = MultiHeadAttention(num_heads=num_heads, head_size=head_size)
+        self.ffwd = FeedForward(n_embed)
+
+    def forward(self, x):
+        x = x + self.sa(x)  # residual connection
+        x = x + self.ffwd(x)  # residual connection
+        return x
 
 
 class BigramLanguageModel(nn.Module):
@@ -135,6 +156,7 @@ class BigramLanguageModel(nn.Module):
             num_heads=4, head_size=n_embed // 4
         )  # i.e. 4 heads of 8 dimensions self-attention
         self.ffwd = FeedForward(n_embed)
+        self.blocks = nn.Sequential(*[Block(n_embed, 4) for _ in range(3)])
 
     def forward(self, inputs, targets=None):
         # inputs: (batch_size, sequence_length)
@@ -143,8 +165,7 @@ class BigramLanguageModel(nn.Module):
         tok_embd = self.token_embedding_table(inputs)
         pos_embd = self.position_embedding_table(torch.arange(T, device=device))
         x = tok_embd + pos_embd  # (batch_size, sequence_length, n_embed)
-        x = self.sa_head(x)  # (batch_size, sequence_length, n_embed)
-        x = self.ffwd(x)  # (batch_size, sequence_length, n_embed)
+        x = self.blocks(x)
         logits = self.lm_head(x)  # (batch_size, sequence_length, vocab_size)
 
         if targets is None:
