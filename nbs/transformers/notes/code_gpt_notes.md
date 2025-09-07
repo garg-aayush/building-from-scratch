@@ -51,3 +51,11 @@
     - **No dependency on batch size**: Layer norm works the same regardless of batch size, even with a batch size of 1
     - **Simpler implementation and tracking**: We don't need to maintain running mean and variance buffers. There's no distinction between training and test time
     - **Better for sequence models**: Each token's features are normalized independently, which is more appropriate for language modeling
+
+## Post vs Pre Layer Normalization
+
+- The original Transformer paper used **post-layer normalization**, where layer norm is applied after the multi-head attention and feed-forward operations.
+- However, modern implementations have largely switched to **pre-layer normalization**, where layer norm is applied before the operations
+- The switch to pre-layer normalization happened possibly due to:
+    - **Better gradient flow**: Pre-layer norm creates a cleaner residual pathway, allowing gradients to flow more directly through the network
+    - **More stable training**: The normalization happens before the potentially destabilizing operations (attention and feed-forward), leading to more stable gradients

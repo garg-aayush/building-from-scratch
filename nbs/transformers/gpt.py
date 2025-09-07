@@ -140,9 +140,9 @@ class Block(nn.Module):
         self.ln2 = nn.LayerNorm(n_embed)
 
     def forward(self, x):
-        # post-layer normalization
-        x = self.ln1(x) + self.sa(x)  # residual connection
-        x = self.ln2(x) + self.ffwd(x)  # residual connection
+        # pre-layer normalization
+        x = x + self.sa(self.ln1(x))  # residual connection
+        x = x + self.ffwd(self.ln2(x))  # residual connection
         return x
 
 
