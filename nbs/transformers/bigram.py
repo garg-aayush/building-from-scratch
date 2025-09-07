@@ -6,9 +6,9 @@ from torch.nn import functional as F
 # hyperparameters
 batch_size = 32  # number of sequences processed in parallel
 block_size = 8  # maximum context length for predictions
-max_iters = 9000  # total number of training iterations
+max_iters = 5000  # total number of training iterations
 eval_interval = 300  # evaluate model every N steps
-learning_rate = 1e-3  # learning rate for optimizer
+learning_rate = 4e-3  # learning rate for optimizer
 eval_iters = 200  # number of iterations to average for loss estimation
 # check if device is available ('cuda' or 'mps' or 'cpu')
 device = "cpu"  # default fallback

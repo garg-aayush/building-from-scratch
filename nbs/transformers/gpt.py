@@ -1,12 +1,12 @@
 import torch
 import torch.nn as nn
-from einops import rearrange
+from einops import einsum, rearrange
 from torch.nn import functional as F
 
 # hyperparameters
 batch_size = 32  # number of sequences processed in parallel
 block_size = 8  # maximum context length for predictions
-max_iters = 9000  # total number of training iterations
+max_iters = 5000  # total number of training iterations
 eval_interval = 300  # evaluate model every N steps
 learning_rate = 1e-3  # learning rate for optimizer
 eval_iters = 200  # number of iterations to average for loss estimation
@@ -17,6 +17,7 @@ if torch.cuda.is_available():
     device = "cuda"
 elif torch.backends.mps.is_available():
     device = "mps"
+device = "cpu"
 # ------------------
 
 print(f"Using {device} device")
@@ -76,6 +77,29 @@ def get_batch(split):
     return x.to(device), y.to(device)
 
 
+class Head(nn.Module):
+    def __init__(self, head_size):
+        super().__init__()
+        self.key = nn.Linear(n_embed, head_size, bias=False)
+        self.query = nn.Linear(n_embed, head_size, bias=False)
+        self.value = nn.Linear(n_embed, head_size, bias=False)
+        # we use register_buffer to create a tensor that is not a parameter of the model but is part of the model's state and will be saved and loaded with the model
+        self.register_buffer("tril", torch.tril(torch.ones(block_size, block_size)))
+
+    def forward(self, x):
+        B, T, C = x.shape
+        k = self.key(x)  # (B, T, head_size)
+        q = self.query(x)  # (B, T, head_size)
+        v = self.value(x)  # (B, T, head_size)
+        # compute attention scores ("affinities")
+        w = einsum(q, k, "B T1 C, B T2 C -> B T1 T2")  # (B, T, T)
+        w = w.masked_fill(self.tril[:T, :T] == 0, float("-inf"))  # (B, T, T)
+        w = F.softmax(w, dim=-1)  # (B, T, T)
+        # perform weighted aggregation of the values
+        out = w @ v  # (B, T, head_size)
+        return out  # (B, T, head_size)
+
+
 class BigramLanguageModel(nn.Module):
     def __init__(self):
         super().__init__()
@@ -85,6 +109,7 @@ class BigramLanguageModel(nn.Module):
         self.lm_head = nn.Linear(n_embed, vocab_size)
         # positional embeddings
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
+        self.sa_head = Head(head_size=n_embed)
 
     def forward(self, inputs, targets=None):
         # inputs: (batch_size, sequence_length)
@@ -93,6 +118,7 @@ class BigramLanguageModel(nn.Module):
         tok_embd = self.token_embedding_table(inputs)
         pos_embd = self.position_embedding_table(torch.arange(T, device=device))
         x = tok_embd + pos_embd  # (batch_size, sequence_length, n_embed)
+        x = self.sa_head(x)  # (batch_size, sequence_length, n_embed)
         logits = self.lm_head(x)  # (batch_size, sequence_length, vocab_size)
 
         if targets is None:
@@ -111,8 +137,10 @@ class BigramLanguageModel(nn.Module):
         """Generate new tokens by sampling from the model's predictions"""
         # inputs: (batch_size, sequence_length)
         for _ in range(max_new_tokens):
+            # crop context if it's too long (as the position embeddings will run out of scope)
+            inputs_cond = inputs[:, -block_size:]
             # get predictions for current sequence
-            logits, _ = self(inputs)
+            logits, _ = self(inputs_cond)
             # focus only on the last time step's predictions
             logits = logits[:, -1, :]  # (batch_size, vocab_size)
             # convert logits to probabilities
