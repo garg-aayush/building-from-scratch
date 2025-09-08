@@ -18,5 +18,4 @@ As I was following the video, I tracked the training and validation loss at each
 
 ![Loss Curves](basic-gpt/images/loss_curves.png)
 
-For a detailed breakdown of the approach I followed and the notes I took during this process, please see the **[Notes.md](basic-gpt/Notes.md)** file.
-
+For a detailed breakdown of the approach I followed and the notes I took during this process, please see the **[Notes.md](basic-gpt/notes.md)** file.
