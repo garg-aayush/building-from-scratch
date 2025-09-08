@@ -4,20 +4,22 @@ from einops import einsum, rearrange
 from torch.nn import functional as F
 
 # hyperparameters
-batch_size = 32  # number of sequences processed in parallel
-block_size = 8  # maximum context length for predictions
+batch_size = 64  # number of sequences processed in parallel
+block_size = 256  # maximum context length for predictions
 max_iters = 5000  # total number of training iterations
 eval_interval = 300  # evaluate model every N steps
-learning_rate = 1e-3  # learning rate for optimizer
+learning_rate = 3e-4  # learning rate for optimizer
 eval_iters = 200  # number of iterations to average for loss estimation
-n_embed = 32  # number of embedding dimensions
+n_embed = 384  # number of embedding dimensions
+n_layer = 6  # number of Transformer blocks
+n_head = 6  # number of attention heads
+dropout = 0.2  # dropout rate
 # check if device is available ('cuda' or 'mps' or 'cpu')
 device = "cpu"  # default fallback
 if torch.cuda.is_available():
     device = "cuda"
 elif torch.backends.mps.is_available():
     device = "mps"
-device = "cpu"
 # ------------------
 
 print(f"Using {device} device")
@@ -85,6 +87,8 @@ class Head(nn.Module):
         self.value = nn.Linear(n_embed, head_size, bias=False)
         # we use register_buffer to create a tensor that is not a parameter of the model but is part of the model's state and will be saved and loaded with the model
         self.register_buffer("tril", torch.tril(torch.ones(block_size, block_size)))
+        # dropout
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         B, T, C = x.shape
@@ -95,6 +99,7 @@ class Head(nn.Module):
         w = einsum(q, k, "B T1 C, B T2 C -> B T1 T2")  # (B, T, T)
         w = w.masked_fill(self.tril[:T, :T] == 0, float("-inf"))  # (B, T, T)
         w = F.softmax(w, dim=-1)  # (B, T, T)
+        w = self.dropout(w)
         # perform weighted aggregation of the values
         out = w @ v  # (B, T, head_size)
         return out  # (B, T, head_size)
@@ -106,11 +111,13 @@ class MultiHeadAttention(nn.Module):
         self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
         # projection layer: allows the model to learn how to combine information from multiple attention heads into a unified representation for the residual pathway
         self.proj = nn.Linear(n_embed, n_embed)
+        # dropout
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         # output size: (batch_size, sequence_length, num_heads * head_size)
         out = torch.cat([h(x) for h in self.heads], dim=-1)
-        out = self.proj(out)
+        out = self.dropout(self.proj(out))
         return out
 
 
@@ -122,6 +129,7 @@ class FeedForward(nn.Module):
             nn.Linear(n_embed, 4 * n_embed),
             nn.ReLU(),
             nn.Linear(4 * n_embed, n_embed),
+            nn.Dropout(dropout),
         )
 
     def forward(self, x):
@@ -129,7 +137,7 @@ class FeedForward(nn.Module):
 
 
 class Block(nn.Module):
-    """Transfformer Block: communication (MHA) followed by computation (FFN)"""
+    """Transformer Block: communication (MHA) followed by computation (FFN)"""
 
     def __init__(self, n_embed, num_heads):
         super().__init__()
@@ -155,13 +163,8 @@ class BigramLanguageModel(nn.Module):
         self.lm_head = nn.Linear(n_embed, vocab_size)
         # positional embeddings
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
-        self.sa_head = MultiHeadAttention(
-            num_heads=4, head_size=n_embed // 4
-        )  # i.e. 4 heads of 8 dimensions self-attention
-        self.ffwd = FeedForward(n_embed)
-        self.blocks = nn.Sequential(
-            *[Block(n_embed, 4) for _ in range(3)], nn.LayerNorm(n_embed)
-        )
+        self.blocks = nn.Sequential(*[Block(n_embed, n_head) for _ in range(n_layer)])
+        self.ln_f = nn.LayerNorm(n_embed)
 
     def forward(self, inputs, targets=None):
         # inputs: (batch_size, sequence_length)
@@ -170,7 +173,8 @@ class BigramLanguageModel(nn.Module):
         tok_embd = self.token_embedding_table(inputs)
         pos_embd = self.position_embedding_table(torch.arange(T, device=device))
         x = tok_embd + pos_embd  # (batch_size, sequence_length, n_embed)
-        x = self.blocks(x)
+        x = self.blocks(x)  # (batch_size, sequence_length, n_embed)
+        x = self.ln_f(x)  # (batch_size, sequence_length, n_embed)
         logits = self.lm_head(x)  # (batch_size, sequence_length, vocab_size)
 
         if targets is None:

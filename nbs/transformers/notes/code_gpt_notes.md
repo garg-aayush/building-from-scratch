@@ -59,3 +59,26 @@
 - The switch to pre-layer normalization happened possibly due to:
     - **Better gradient flow**: Pre-layer norm creates a cleaner residual pathway, allowing gradients to flow more directly through the network
     - **More stable training**: The normalization happens before the potentially destabilizing operations (attention and feed-forward), leading to more stable gradients
+
+## Scale and push the performance
+
+One key addition is **Dropout**. Dropout is a regularization technique that can be added right before residual connections back into the residual pathway. Apply dropout:
+- At the end of the multi-headed attention 
+- When calculating the attention affinities after the softmax
+- At various other points to randomly prevent some nodes from communicating
+
+Dropout comes from a 2014 paper and works by randomly shutting off some subset of neurons during each forward/backward pass. The mask of what's being dropped out changes every iteration, effectively training an ensemble of sub-networks. At test time, everything is fully enabled and all those sub-networks merge into a single ensemble. This is a regularization technique I added because I was about to scale up the model significantly and was concerned about overfitting.
+
+### Updated Hyperparameters
+
+- **Batch size**: Increased to 64 (much larger than before)
+- **Block size**: Increased to 256 characters of context (previously just 8 characters)
+- **Learning rate**: Reduced slightly because the neural net is now much bigger
+- **Embedding dimension**: Now 384 
+- **Number of heads**: 6 heads (384 ÷ 6 = 64 dimensions per head, which is standard)
+- **Number of layers**: 6 layers (Transformer Block)
+- **Dropout**: 0.2 (20% of intermediate calculations are disabled each pass)
+
+- After training this scaled-up model, the results were impressive. The validation loss improved to 1.48** - a significant improvement just from scaling up the neural network with our existing code. 
+- The generated text is much more recognizable as Shakespeare-like output. While still nonsensical when you actually read, it maintains the characteristic structure and style of the input text - someone speaking in Shakespearean manner with proper formatting and dialogue structure. 
+- This is just a character-level Transformer trained on 1 million characters from Shakespeare and a good demonstration of what's possible at this scale.
