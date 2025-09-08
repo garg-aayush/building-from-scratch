@@ -7,7 +7,7 @@ from torch.nn import functional as F
 batch_size = 64  # number of sequences processed in parallel
 block_size = 256  # maximum context length for predictions
 max_iters = 5000  # total number of training iterations
-eval_interval = 300  # evaluate model every N steps
+eval_interval = 50  # evaluate model every N steps
 learning_rate = 3e-4  # learning rate for optimizer
 eval_iters = 200  # number of iterations to average for loss estimation
 n_embed = 384  # number of embedding dimensions
@@ -27,7 +27,7 @@ torch.manual_seed(42)
 
 # !mkdir -p data && wget -O data/input.txt https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt
 # read the dataset
-with open("data/input.txt", "r", encoding="utf-8") as f:
+with open("./data/input.txt", "r", encoding="utf-8") as f:
     text = f.read()
 
 

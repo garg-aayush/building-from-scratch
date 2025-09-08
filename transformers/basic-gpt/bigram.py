@@ -23,7 +23,7 @@ torch.manual_seed(42)
 
 # !mkdir -p data && wget -O data/input.txt https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt
 # read the dataset
-with open("data/input.txt", "r", encoding="utf-8") as f:
+with open("./data/input.txt", "r", encoding="utf-8") as f:
     text = f.read()
 
 
