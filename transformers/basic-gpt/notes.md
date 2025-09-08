@@ -204,3 +204,35 @@ This alignment stage is much harder to replicate because:
 - The training data isn't publicly available.
 - It requires significant human feedback and annotation.
 - The multi-step process involves sophisticated RL techniques.
+
+
+## To do (sometime in near future...)
+
+### Papers to Read
+- [X] [Attention Is All You Need](https://arxiv.org/pdf/1706.03762)
+- [ ] [Language Models are Unsupervised Multitask Learners](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf)
+- [ ] [Language Models are Few-Shot Learners](https://arxiv.org/pdf/2005.14165)
+
+### Implementation Exercises
+
+**EX1:**
+Combine the `Head` and `MultiHeadAttention` into one class that processes all heads in parallel, treating heads as another batch dimension. This is a great exercise for understanding 4D tensor operations in PyTorch. (Reference implementation available in nanoGPT)
+
+**EX2: Custom Dataset Training**
+Train your GPT on a dataset of your choice! Some interesting options:
+- Code repositories
+- Poetry or song lyrics
+- Scientific papers
+- Chat conversations
+
+*Advanced Challenge*: Train a GPT to perform arithmetic (a+b=c). Tips:
+- Predict digits in reverse order (mimics human addition algorithm)
+- Modify data loader to serve random problems
+- Mask loss at input positions using `y=-1` (see PyTorch's `CrossEntropyLoss ignore_index`)
+- Ultimate goal: Build a full calculator supporting +, -, *, / operations
+
+**EX3: Pretraining Experiment**
+Find a large dataset where train/validation loss curves don't diverge. Pretrain your transformer, then fine-tune on Shakespeare with reduced steps and learning rate. Does pretraining improve final validation loss?
+
+**EX4: Paper Implementation**
+Read recent transformer papers and implement one novel feature or architectural change. Measure its impact on your GPT's performance.
