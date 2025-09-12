@@ -1,6 +1,7 @@
 import math
 from dataclasses import dataclass
 
+import tiktoken
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -53,7 +54,7 @@ class CausalSelfAttention(nn.Module):
         v = rearrange(v, "B T (nh hs) -> B nh T hs", nh=self.n_head)  # (B, nh, T, hs)
 
         # attention: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
-        att = einsum(q, k, "B nh T1 hs, B nh hs T2 -> B nh T1 T2") * (
+        att = einsum(q, k, "B nh T1 hs, B nh T2 hs -> B nh T1 T2") * (
             1.0 / math.sqrt(k.size(-1))
         )
         att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float("-inf"))
@@ -114,6 +115,26 @@ class GPT(nn.Module):
         )
         # final classification head
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+
+    def forward(self, idx):
+        # idx: token indices
+        B, T = idx.size()
+        assert (
+            T <= self.config.block_size
+        ), f"Cannot forward sequence of length {T}, block size is only {self.config.block_size}"
+        # forward the tokens and position embeddings
+        pos = torch.arange(0, T, dtype=torch.long, device=idx.device)  # shape (T)
+        pos_emb = self.transformer.wpe(pos)  # position embeddings (T, n_embd)
+        tok_emb = self.transformer.wte(idx)  # token embeddings (B, T, n_embd)
+        x = pos_emb + tok_emb
+        # forward pass through the transformer
+        for block in self.transformer.h:
+            x = block(x)
+        # forward pass through the final layer norm and classifier
+        x = self.transformer.ln_f(x)
+        # every B,T calculate the logits for what token comes next in the sequence
+        logits = self.lm_head(x)  # (B,T,vocab_size)
+        return logits
 
     @classmethod
     def from_pretrained(cls, model_type):
@@ -179,6 +200,59 @@ class GPT(nn.Module):
         return model
 
 
-# -----------------------------------#
+# -------------------------------------------------------------------------#
+num_return_sequences = 5
+max_seq_len = 30
+start_seq = "Hello, I'm a language model,"
+# load the model
 model = GPT.from_pretrained("gpt2")
+# # random model initialization
+# model = GPT(GPTConfig())
 print("Model loaded successfully")
+
+# get available device
+device = "cpu"
+if torch.cuda.is_available():
+    device = "cuda"
+elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+    device = "mps"
+print(f"Using device: {device}")
+
+# set to eval mode and move to appropriate device
+model.eval()
+model.to(device)
+
+# prefix the tokens
+enc = tiktoken.get_encoding("gpt2")
+tokens = enc.encode(start_seq)  # 8 tokens
+tokens = torch.tensor(tokens, dtype=torch.long)  # (8,)
+tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)  # (5, 8) - Fixed comment
+x = tokens.to(device)
+
+# generate the text -> x: (B,T) where B=5, T=8
+torch.manual_seed(42)
+if device == "cuda":  # Fixed: only set CUDA seed if using CUDA
+    torch.cuda.manual_seed(42)
+while x.size(1) < max_seq_len:
+    # forward the model to get the logits
+    with torch.no_grad():
+        logits = model(x)  # (B,T,vocab_size)
+        # logits at last position (inefficient but correct)
+        logits = logits[:, -1, :]  # (B, vocab_size)
+        # calculate probabilities
+        probs = F.softmax(logits, dim=-1)
+        # do topk sampling of 50 (default in HF pipeline)
+        topk_probs, topk_indices = torch.topk(probs, 50, dim=-1)
+        # select a token from the top-k probs
+        ix = torch.multinomial(topk_probs, 1)  # (B,1)
+        # gather the corresponding indices
+        xcol = torch.gather(topk_indices, -1, ix)  # (B, 1)
+        # append to the sequence
+        x = torch.cat([x, xcol], dim=1)
+
+# print the generated text
+for i in range(num_return_sequences):
+    tokens = x[i, :max_seq_len].tolist()
+    decoded = enc.decode(tokens)
+    print(decoded)
+    print("-" * 100)

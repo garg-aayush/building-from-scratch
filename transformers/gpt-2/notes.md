@@ -46,5 +46,20 @@
         -  If a ReLU neuron is exactly flat at zero, any activations that fall there will get exactly zero gradient. There's no change, no adaptation, no development of the network.
         - The GELU always contributes a local gradient and so there's always going to be a change always going to be an adaptation and sort of smoothing it out ends up empirically working better in practice
 - Multi-head attention is implemented with tensor reshaping (4D-Tensor) for efficient parallel computation.
+
 ---
 
+## Forward Pass & Sampling
+
+- The forward pass takes input token indices (B,T) and outputs logits (B,T,vocab_size). Applying softmax gives next-token probabilities. This is the T+1 logits.
+
+- Sampling:
+    * We start with a prefix (e.g., *“Hello, I’m a language model”*).
+    * Take the model’s output logits. Apply softmax to get probabilities. This is the T+1 logits.
+    * Repeatedly sample from logits using **top-k sampling (k=50)** (default in Hugging Face pipeline).
+    * Top-k sampling restricts sampling to the top-k most probable tokens. This improves coherence by avoiding low-probability words that derail the text. If we sample from the full distribution, completions tend to go off track; restricting to top-k helps a lot. In top-k, it is done by creating a mask of the top-k most probable tokens and setting the rest to 0. Then, we sample from the masked renormalized distribution.
+    * Append sampled tokens until max length is reached.
+    
+- The implementation generates coherent text, though Hugging Face’s pipeline has slight differences due to additional sampling heuristics.
+
+---
