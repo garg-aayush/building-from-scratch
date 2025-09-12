@@ -16,6 +16,7 @@
 
 - Note, GPT-2 paper omits training details, so we’ll also reference the GPT-3 paper: [Language Models are Few-Shot Learners](https://arxiv.org/abs/2005.14165), which is more concrete about hyperparameters and optimizers.
 
+
 ---
 
 ## Loading the Original GPT-2 (Huggingface version)
@@ -26,6 +27,7 @@
     - Unlike the original Transformer paper where sinusoidal embeddings were fixed, GPT-2 trains these parameters from scratch and they converge to similar patterns (sine-cosine patterns)
     - Here channels show noisy curves, suggesting the model wasn't fully trained to convergence. However, 
 - Please see the [load-hf-gpt2.ipynb](load-hf-gpt2.ipynb) for more details.
+
 ---
 
 ## Building GPT-2 model class
@@ -43,4 +45,6 @@
     - GELU has advantages over ReLU since it avoids the “dead relu neuron” problem and provides smoother gradients.
         -  If a ReLU neuron is exactly flat at zero, any activations that fall there will get exactly zero gradient. There's no change, no adaptation, no development of the network.
         - The GELU always contributes a local gradient and so there's always going to be a change always going to be an adaptation and sort of smoothing it out ends up empirically working better in practice
-- Multi-head attention is implemented with tensor reshaping (4D-Tensor) for efficient parallel computation 
+- Multi-head attention is implemented with tensor reshaping (4D-Tensor) for efficient parallel computation.
+---
+
