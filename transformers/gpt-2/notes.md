@@ -63,3 +63,25 @@
 - The implementation generates coherent text, though Hugging Face’s pipeline has slight differences due to additional sampling heuristics.
 
 ---
+
+## Dataset Choice: Tiny Shakespeare
+
+- For debugging and quick iteration, we don’t start with a huge dataset. Instead, we use the **Tiny Shakespeare dataset**:
+    * It’s small enough to train on a laptop/GPU quickly, but large enough to test whether the model learns.
+    * Text is plain ASCII, so each character maps to a single byte.
+- This dataset allows us to debug the training pipeline before moving to larger corpora.
+- Here,
+    * **Inputs (X):** the current sequence of tokens.
+    * **Targets (Y):** the same sequence shifted left by one position.
+---
+
+## Loss function: cross-entropy loss
+
+- We use **cross-entropy loss**, the standard for classification problems:
+    * The logits from the model are of shape `(batch_size, sequence_length, vocab_size)`.
+    * Targets are `(batch_size, sequence_length)`.
+    * Cross-entropy flattens these and computes how well the predicted distribution matches the actual next token.
+
+- At initialization, the model’s predictions are close to uniform across the 50,257 tokens.
+    * Expected loss at this stage = `-ln(1/vocab_size)` ≈ **10.8**. This is the loss we expect when the model is making random predictions. This shows the model is not favoring any one token over the others. The probability of each token is fairly diffused.
+    * If we see a loss near this, we know our pipeline is wired correctly. 
