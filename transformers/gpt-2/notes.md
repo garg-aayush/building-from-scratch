@@ -117,3 +117,17 @@ There's a subtle **bug** relative to GPT-2:
     * (1) It enforces that token similarity is consistent between embedding space and output distribution
     * (2) It saves parameters—here `768 × 50257 ≈ 40M` weights, \~30% of the 124M model
 ---
+
+## Initialization Matching GPT-2
+
+- We need to ensure my initialization matches GPT-2's approach:
+- Initialize embedding and linear layers:
+    * **Linear weights:** Initialize with `Normal(0, 0.02)` distribution
+    * **Biases:** Set to 0 
+    * **Embeddings:** Use `Normal(0, 0.02)`
+    * **LayerNorm:** Use PyTorch defaults (`weight=1`, `bias=0`)
+- GPT-2 applies special scaling to residual branch weights at initialization:
+    * Scale certain residual-branch weights by `1/√N`, where `N` = number of residual additions along the depth
+    * Each block has 2 residual additions (attention + MLP), so `N = 2 * n_layer`
+    * **Intuition:** The residual stream repeatedly does `x ← x + contribution`. Without scaling, variance of `x` grows like `sqrt(N)`. Scaling by `1/sqrt(N)` keeps forward activations controlled.
+---
