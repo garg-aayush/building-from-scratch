@@ -27,3 +27,20 @@
     - Here channels show noisy curves, suggesting the model wasn't fully trained to convergence. However, 
 - Please see the [load-hf-gpt2.ipynb](load-hf-gpt2.ipynb) for more details.
 ---
+
+## Building GPT-2 model class
+
+- Instead of relying on Hugging Face’s \~2000 lines of code, we’ll write a minimal implementation (\~100 lines) with the same module/parameter structure so we can import GPT-2 weights. 
+- Key architectural points difference from original _Attention_ paper :
+    * Decoder-only Transformer (no encoder, no cross-attention).
+    * LayerNorms moved before Attention/MLP (pre-norm).
+        - Pre-norm ensures residual connections form a clean pathway from inputs to outputs, allowing gradients to flow effectively as `+` operation distributes the gradient equally across the two pathways. It is good for optimization. 
+    * Extra LayerNorm before the LM head.
+- You can think attention is the “reduce” operation, where tokens exchange information by attending to others, while the MLP is the “map” operation, applied independently to each token. Thus, each block can be seen as a sequence of map-reduce steps, progressively refining token representations.
+- The MLP in GPT-2 uses the [GELU](https://arxiv.org/abs/1606.08415) activation function, specifically the approximate version based on `tanh`. 
+    - This choice is historical—at the time, the exact GELU implementation was slower in TensorFlow, so the approximation was used and carried over into BERT and GPT-2. See this [blog](https://github.com/pytorch/pytorch/issues/39853).
+    - While today we’d prefer the exact version, we’ll reproduce GPT-2 faithfully by using the approximation. 
+    - GELU has advantages over ReLU since it avoids the “dead relu neuron” problem and provides smoother gradients.
+        -  If a ReLU neuron is exactly flat at zero, any activations that fall there will get exactly zero gradient. There's no change, no adaptation, no development of the network.
+        - The GELU always contributes a local gradient and so there's always going to be a change always going to be an adaptation and sort of smoothing it out ends up empirically working better in practice
+- Multi-head attention is implemented with tensor reshaping (4D-Tensor) for efficient parallel computation 
