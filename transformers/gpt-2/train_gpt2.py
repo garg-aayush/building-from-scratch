@@ -54,14 +54,16 @@ class CausalSelfAttention(nn.Module):
         q = rearrange(q, "B T (nh hs) -> B nh T hs", nh=self.n_head)  # (B, nh, T, hs)
         v = rearrange(v, "B T (nh hs) -> B nh T hs", nh=self.n_head)  # (B, nh, T, hs)
 
-        # attention: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
-        att = einsum(q, k, "B nh T1 hs, B nh T2 hs -> B nh T1 T2") * (
-            1.0 / math.sqrt(k.size(-1))
-        )
-        att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float("-inf"))
-        att = F.softmax(att, dim=-1)
-        # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-        y = att @ v
+        # # attention: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
+        # att = einsum(q, k, "B nh T1 hs, B nh T2 hs -> B nh T1 T2") * (
+        #     1.0 / math.sqrt(k.size(-1))
+        # )
+        # att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float("-inf"))
+        # att = F.softmax(att, dim=-1)
+        # # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+        # y = att @ v
+        # use FlashAttention 
+        y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
         # re-assemble all head outputs side by side
         y = rearrange(y, "B nh T hs -> B T (nh hs)")
         # output projection

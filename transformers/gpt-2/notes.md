@@ -251,3 +251,14 @@ Now that training works, we want to speed it up significantly to get my money's 
         - Mostly deep learning operations are limited by how fast data can move between HBM and compute units, not by computational throughput. Tensor cores can sit idle waiting for data from HBM, leading to poor utilization (often ~60% even in well-tuned applications)
         - This is where torch.compile comes in.
 ---
+
+### FlashAttention: Memory-Efficient Attention
+
+- [FlashAttention](https://arxiv.org/abs/2205.14135) is a memory-efficient attention algorithm that significantly optimizes the standard attention mechanism. While `torch.compile` provides many optimizations, it won't discover specialized algorithms like FlashAttention, which requires manual implementation
+- FlashAttention Works:
+    - Standard attention materializes the full T×T attention matrix in High Bandwidth Memory (HBM), which becomes extremely expensive for long sequences
+    - FlashAttention restructures the computation to avoid ever storing this large attention matrix in HBM. It processes attention in chunks, never requiring the full T×T matrix to exist in memory simultaneously.The tiling strategy allows it to work within the memory constraints of GPU streaming multiprocessors. Basically, it is aware of the memory hierarchy and orchestrates the computation such that we have fewer reads and writes to the HBM.
+    - Although it performs more FLOPs on paper, it drastically reduces expensive HBM reads/writes, making it substantially faster overall
+    - FlashAttention is implemented as a kernel fusion operation. It uses an "[online softmax](https://arxiv.org/abs/1805.02867) trick that computes attention scores in small blocks/tiles. "Online softmax" is a technique that computes the softmax in an online manner, without having to store all the inputs in memory simultaneously using intermediate variables.
+- With `FlashAttention` (A6000 Ada): GPU VRAM: ~13.1 GB, toks/s: ~104.5K, dt: ~155ms
+---
