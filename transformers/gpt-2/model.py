@@ -230,17 +230,25 @@ tokens = enc.encode(text)
 B, T = 4, 8
 # create a data buffer
 # +1 because we need the target for the last token for each example
-buf = torch.tensor(tokens[: B * T + 1], dtype=torch.long)
-x = buf[:-1].view(B, T).to(device)  # input to the model
-y = buf[1:].view(B, T).to(device)  # output of the model
+buf = torch.tensor(tokens[: B * T + 1], dtype=torch.long).to(device)
+x = buf[:-1].view(B, T)  # input to the model
+y = buf[1:].view(B, T)  # output of the model
 print(f"x.shape: {x.shape}, y.shape: {y.shape}")
 
 # get logits
 model = GPT(GPTConfig())  # random model initialization
 print("Model loaded successfully")
 model.to(device)
-logits, loss = model(x, y)
-print(logits.shape, loss)
+
+# optimize
+# overfitting on a single set of batch
+optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+for i in range(50):
+    optimizer.zero_grad(set_to_none=True)
+    logits, loss = model(x, y)
+    loss.backward()
+    optimizer.step()
+    print(f"step: {i}, loss: {loss.item()}")
 
 import sys
 

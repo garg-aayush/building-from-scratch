@@ -85,3 +85,10 @@
 - At initialization, the model’s predictions are close to uniform across the 50,257 tokens.
     * Expected loss at this stage = `-ln(1/vocab_size)` ≈ **10.8**. This is the loss we expect when the model is making random predictions. This shows the model is not favoring any one token over the others. The probability of each token is fairly diffused.
     * If we see a loss near this, we know our pipeline is wired correctly. 
+
+## Optimize on single set of batch
+- We train using **AdamW**, a variant of the Adam optimizer that fixes weight decay behavior:
+    * Make sure to start by zeroing gradients (`optimizer.zero_grad()`).
+- Before training on the whole dataset, we first **train repeatedly on one tiny batch** as a sanity check.
+    * If the model can drive loss close to zero, it means our implementation of forward/backward/optimizer is correct. This shows the model is learning to overfit the small batch, which is a standard sanity check in deep learning.
+    * If it fails to overfit, there's a bug in the pipeline.
