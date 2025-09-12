@@ -107,3 +107,13 @@ Next I implement a minimal **data loader**:
     * Plus some early learning signal
     * Loss won't reach zero without training for full epochs
 ---
+
+## Fix the bug relative to GPT-2
+
+There's a subtle **bug** relative to GPT-2: 
+- Until now, we didn't consider the **weight tying** between input embeddings and the output classifier layers
+- In GPT-2 ([Attention Is All You Need](https://arxiv.org/abs/1706.03762) following [Press & Wolf 2017](https://arxiv.org/pdf/1608.05859)), the token embedding matrix `wte.weight` and the classifier matrix used before the final softmax share **the same weights**. You can check this by comparing the state dicts `wte.weight` and `lm_head.weight`. They should be equal and point to same data pointer
+- Tying has two benefits:
+    * (1) It enforces that token similarity is consistent between embedding space and output distribution
+    * (2) It saves parameters—here `768 × 50257 ≈ 40M` weights, \~30% of the 124M model
+---

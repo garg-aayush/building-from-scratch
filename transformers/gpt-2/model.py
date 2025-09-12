@@ -116,6 +116,10 @@ class GPT(nn.Module):
         # final classification head
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
 
+        # weight tying
+        # it points to the same memory address, now we are training approximately 30% less parameters
+        self.transformer.wte.weight = self.lm_head.weight
+
     def forward(self, idx, targets=None):
         # idx: token indices
         B, T = idx.size()
