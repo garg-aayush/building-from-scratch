@@ -131,3 +131,34 @@ There's a subtle **bug** relative to GPT-2:
     * Each block has 2 residual additions (attention + MLP), so `N = 2 * n_layer`
     * **Intuition:** The residual stream repeatedly does `x ← x + contribution`. Without scaling, variance of `x` grows like `sqrt(N)`. Scaling by `1/sqrt(N)` keeps forward activations controlled.
 ---
+
+## Section 2: Let's make the training fast
+Now that training works, we want to speed it up significantly to get my money's worth from the hardware. 
+
+### Understanding GPU capabilities and current precision usage
+- It is essential to understand the GPU capabilities that are available to you. It helps you understand what kind of performance you can expect.
+
+- Key questions always to ask:
+    - What hardware do I have available?
+    - What computational capabilities does it offer?
+    - Am I fully utilizing these capabilities?
+
+- Current Andrej setup analysis (example: A100 80 GB SXM):
+    - We can check the datasheet for expected compute capabilities
+    - Precision requirements for training:
+        * By default in PyTorch, all tensors (activations, parameters, etc.) use float32
+            - `import code; code.interact(local=locals())`
+        * Each number uses 32-bit float representation, which consumes significant memory
+        * For deep learning training, float32 precision is often excessive. Training can tolerate significantly lower precisions empirically
+        * These GPUs support up to FP64 (useful for scientific computing), but I don't need that much precision
+    - Performance gains from lower precision:
+        * FP32: I can expect at most ~19.5 TFLOPS
+        * TF32: Up to 8× improvement over FP32
+        * FP16/BF16: Up to ~16× improvement, reaching ~312 TFLOPS
+        * Ignore NVIDIA's "with sparsity" numbers since we won't use sparsity (not widely used in training today)
+        * INT8: Even higher performance, but only suitable for inference, not training (uniform spacing doesn't match normal-like distributions of activations/weights during training)
+    - Memory bandwidth benefits:
+        * Lower precision uses fewer bits per value, making data movement easier
+        * Memory bandwidth is precious - many deep learning workloads are memory-bound
+        * Tensor cores often sit idle waiting for data. Even well-tuned applications might only achieve ~60% utilization
+        * Reducing precision shrinks activations and weights, allowing more data in same capacity and faster movement
