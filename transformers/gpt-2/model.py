@@ -207,6 +207,38 @@ class GPT(nn.Module):
 
 
 # -------------------------------------------------------------------------#
+class DataLoaderLite:
+    def __init__(self, B, T):
+        self.B = B
+        self.T = T
+
+        # load the dataset
+        # data has approximately 40K lines, 200K words, 1M bytes
+        with open("data/input.txt", "r", encoding="utf-8") as f:
+            text = f.read()
+        enc = tiktoken.get_encoding("gpt2")
+        tokens = enc.encode(text)
+        self.tokens = torch.tensor(tokens, dtype=torch.long)
+        print(f"Loaded {len(self.tokens)} tokens")
+        print(f"1 epoch has {len(self.tokens) // (self.B * self.T)} batches")
+
+        # set state
+        self.cur_pos = 0
+
+    def get_batch(self):
+        B, T = self.B, self.T
+        buf = self.tokens[self.cur_pos : self.cur_pos + B * T + 1]
+        x = buf[:-1].view(B, T)  # input to the model
+        y = buf[1:].view(B, T)  # output of the model
+        # advance position
+        self.cur_pos += B * T
+        # if loading past the end of the dataset, loop back to the beginning
+        if self.cur_pos + B * T + 1 > len(self.tokens):
+            self.cur_pos = 0
+        return x, y
+
+
+# -------------------------------------------------------------------------#
 num_return_sequences = 5
 max_seq_len = 30
 start_seq = "Hello, I'm a language model,"
@@ -220,20 +252,7 @@ elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
 print(f"Using device: {device}")
 
 # get a data batch
-enc = tiktoken.get_encoding("gpt2")
-# data has approximately 40K lines, 200K words, 1M bytes
-with open("data/input.txt", "r", encoding="utf-8") as f:
-    text = f.read()
-# sub-sample
-text = text[:1000]
-tokens = enc.encode(text)
-B, T = 4, 8
-# create a data buffer
-# +1 because we need the target for the last token for each example
-buf = torch.tensor(tokens[: B * T + 1], dtype=torch.long).to(device)
-x = buf[:-1].view(B, T)  # input to the model
-y = buf[1:].view(B, T)  # output of the model
-print(f"x.shape: {x.shape}, y.shape: {y.shape}")
+train_loader = DataLoaderLite(B=4, T=32)
 
 # get logits
 model = GPT(GPTConfig())  # random model initialization
@@ -244,6 +263,8 @@ model.to(device)
 # overfitting on a single set of batch
 optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
 for i in range(50):
+    x, y = train_loader.get_batch()
+    x, y = x.to(device), y.to(device)
     optimizer.zero_grad(set_to_none=True)
     logits, loss = model(x, y)
     loss.backward()

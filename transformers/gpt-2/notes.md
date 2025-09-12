@@ -85,6 +85,7 @@
 - At initialization, the model’s predictions are close to uniform across the 50,257 tokens.
     * Expected loss at this stage = `-ln(1/vocab_size)` ≈ **10.8**. This is the loss we expect when the model is making random predictions. This shows the model is not favoring any one token over the others. The probability of each token is fairly diffused.
     * If we see a loss near this, we know our pipeline is wired correctly. 
+---
 
 ## Optimize on single set of batch
 - We train using **AdamW**, a variant of the Adam optimizer that fixes weight decay behavior:
@@ -92,3 +93,17 @@
 - Before training on the whole dataset, we first **train repeatedly on one tiny batch** as a sanity check.
     * If the model can drive loss close to zero, it means our implementation of forward/backward/optimizer is correct. This shows the model is learning to overfit the small batch, which is a standard sanity check in deep learning.
     * If it fails to overfit, there's a bug in the pipeline.
+---
+
+## Minimal dataloader
+Next I implement a minimal **data loader**:
+- Read the whole tokenized dataset once and maintain a current position
+- On each `next_batch()` call:
+    * Return contiguous chunks of size `B*T+1` (the +1 is for creating labels)
+    * Advance position by `B*T` tokens
+    * Wrap back to the start when past the end of dataset
+- Running only 50 steps shows loss dropping from ~11 to ~6.6:
+    * This is mostly from learning that many vocab entries (unicodes) never occur (driving their logits down). 
+    * Plus some early learning signal
+    * Loss won't reach zero without training for full epochs
+---
