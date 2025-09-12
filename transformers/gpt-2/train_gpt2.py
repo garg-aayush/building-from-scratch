@@ -275,6 +275,8 @@ print(f"Using device: {device}")
 
 # get a data batch
 train_loader = DataLoaderLite(B=16, T=1024)
+# use tf32
+torch.set_float32_matmul_precision("high")
 
 # get logits
 model = GPT(GPTConfig())  # random model initialization

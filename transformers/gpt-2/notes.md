@@ -162,11 +162,39 @@ Now that training works, we want to speed it up significantly to get my money's 
         * Memory bandwidth is precious - many deep learning workloads are memory-bound
         * Tensor cores often sit idle waiting for data. Even well-tuned applications might only achieve ~60% utilization
         * Reducing precision shrinks activations and weights, allowing more data in same capacity and faster movement
+---
 
 ### Performance Timing Setup
-
 - Set up an iteration timer around the optimization loop. Make sure to use `torch.cuda.synchronize()` to ensure GPU finishes before timing
 - Use big enough config: B=16,T=1024 for now onwards
     - If you get out-of-memory: reduce batch size (16 → 8 → 4…)
     - Aim to max out the largest power-of-two  batch size that fits. "Nice" numbers: 8, 16, 24, 32, 48, avoid awkward sizes like 17
 - With FP32 baseline (A6000 Ada): GPU is using ~35 GB, toks/s: ~21.1K, dt: ~790ms 
+---
+
+
+### Using Tensor Cores (TF32) for Matrix multiplications 
+- Tensor Cores: Specialized hardware units/instructions on Ampere and above GPUs designed to accelerate matrix multiplications
+    - Execute small 4×4 matrix multiplication operations as fundamental building blocks
+    - Support multiple precision configurations (input types, accumulator precision, output formats)
+    - All larger matrix operations are automatically decomposed into these efficient 4×4 operations
+- TF32 (TensorFloat-32): A precision format optimized for tensor cores that balances speed and accuracy
+    - Maintains FP32's dynamic range (same sign and exponent bits) while reducing precision (truncated mantissa)
+    - Provides significant speedup over FP32 with minimal impact on training quality
+    - Enables tensor cores to operate much faster than standard FP32 matrix operations
+- Tensor cores excel at matrix multiplication, which is where most computational work happens in GPT-2 model
+    - The bulk of operations occur inside `nn.Linear` layers where tensor cores can be fully utilized
+    - Additions in residuals, nonlinearities, and layer norms are comparatively cheap and don't benefit from tensor cores
+    - In 124M parameter transformer, the largest matrix multiply is the classifier: 768 → 50,257, which dominates tensor core usage and can help speedup the optimization
+- TF32 with Tensor Cores Implementation
+    - Best reference: [A100 architecture white paper](https://images.nvidia.com/aem-dam/en-zz/Solutions/data-center/nvidia-ampere-architecture-whitepaper.pdf)
+    - Tensor cores leverage TF32 format to accelerate matrix operations:
+        - TF32 preserves FP32's sign (1 bit) and exponent (8 bits) for dynamic range (`high` precision)
+        - Crops the mantissa by truncating 13 bits internally, leaving 19 effective bits for precision
+        - Tensor core instructions handle this truncation automatically during 4×4 matrix operations
+        - Accumulation and final outputs remain FP32 to maintain numerical stability
+    - This optimization is transparent to PyTorch code—tensor dtypes stay the same. The precision reduction has minimal impact on training quality empirically. Perfect for transformer models where matrix multiplication dominates computational cost.
+- TF32 Results
+    - Enable tensor cores with TF32 precision in PyTorch with a single line controlling matmul precision. **Always try to use it**. You get great speedup with almost no code changes.
+    - The gap between promised and actual speedup using TF32 varies because workloads are still memory-bound. Even though tensor cores make matrix multiplies faster with TF32, you are still moving FP32 values through memory between operations
+    - With TF32 `high` (A6000 Ada): GPU is using ~35 GB, toks/s: ~30.8K, dt: ~530ms 
