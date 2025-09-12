@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import einsum, rearrange
-
+import time
 
 # -----------------------------------#
 # GPTConfig: Configuration for the GPT-2 model
@@ -274,7 +274,7 @@ elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
 print(f"Using device: {device}")
 
 # get a data batch
-train_loader = DataLoaderLite(B=4, T=32)
+train_loader = DataLoaderLite(B=16, T=1024)
 
 # get logits
 model = GPT(GPTConfig())  # random model initialization
@@ -285,13 +285,20 @@ model.to(device)
 # overfitting on a single set of batch
 optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
 for i in range(50):
+    t0 = time.time()
     x, y = train_loader.get_batch()
     x, y = x.to(device), y.to(device)
     optimizer.zero_grad(set_to_none=True)
     logits, loss = model(x, y)
     loss.backward()
     optimizer.step()
-    print(f"step: {i}, loss: {loss.item()}")
+    # torch.cuda.synchronize() to ensure the GPU finishes before timing
+    torch.cuda.synchronize()
+    t1 = time.time()
+    dt = (t1 - t0) * 1000 # convert to ms
+    # tokens per second is a better metric than dt because it is independent of the batch size and sequence length
+    tokens_per_second = (train_loader.B * train_loader.T) / (t1-t0)
+    print(f"step: {i}, loss: {loss.item()}, dt: {dt:.2f} ms, tok/s: {tokens_per_second:.2f}")
 
 import sys
 

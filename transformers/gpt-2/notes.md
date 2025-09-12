@@ -162,3 +162,11 @@ Now that training works, we want to speed it up significantly to get my money's 
         * Memory bandwidth is precious - many deep learning workloads are memory-bound
         * Tensor cores often sit idle waiting for data. Even well-tuned applications might only achieve ~60% utilization
         * Reducing precision shrinks activations and weights, allowing more data in same capacity and faster movement
+
+### Performance Timing Setup
+
+- Set up an iteration timer around the optimization loop. Make sure to use `torch.cuda.synchronize()` to ensure GPU finishes before timing
+- Use big enough config: B=16,T=1024 for now onwards
+    - If you get out-of-memory: reduce batch size (16 → 8 → 4…)
+    - Aim to max out the largest power-of-two  batch size that fits. "Nice" numbers: 8, 16, 24, 32, 48, avoid awkward sizes like 17
+- With FP32 baseline (A6000 Ada): GPU is using ~35 GB, toks/s: ~21.1K, dt: ~790ms 
