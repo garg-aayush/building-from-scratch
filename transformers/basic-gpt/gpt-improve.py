@@ -14,6 +14,7 @@ n_embed = 384  # number of embedding dimensions
 n_layer = 6  # number of Transformer blocks
 n_head = 6  # number of attention heads
 dropout = 0.2  # dropout rate
+use_flash = False # use flash attention
 # check if device is available ('cuda' or 'mps' or 'cpu')
 device = "cpu"  # default fallback
 if torch.cuda.is_available():
@@ -93,9 +94,10 @@ class MultiHeadAttention(nn.Module):
         self.res_dropout = nn.Dropout(dropout)
         self.heads = num_heads
         self.head_size = head_size
-        # we use register_buffer to create a tensor that is not a parameter of the model but is part of the model's state and will be saved and loaded with the model
-        # we view it as (1, 1, block_size, block_size) to make it compatible with the shape of the attention scores
-        self.register_buffer("tril", torch.tril(torch.ones(block_size, block_size)).view(1, 1, block_size, block_size))
+        if not use_flash:
+            # we use register_buffer to create a tensor that is not a parameter of the model but is part of the model's state and will be saved and loaded with the model
+            # we view it as (1, 1, block_size, block_size) to make it compatible with the shape of the attention scores
+            self.register_buffer("tril", torch.tril(torch.ones(block_size, block_size)).view(1, 1, block_size, block_size))
 
     def forward(self, x):
         # output size: (batch_size, sequence_length, num_heads * head_size = n_embed)
@@ -108,13 +110,20 @@ class MultiHeadAttention(nn.Module):
         k = rearrange(k, "B T (num_heads head_size) -> B num_heads T head_size", num_heads=self.heads)
         q = rearrange(q, "B T (num_heads head_size) -> B num_heads T head_size", num_heads=self.heads)
         v = rearrange(v, "B T (num_heads head_size) -> B num_heads T head_size", num_heads=self.heads)
-        # compute attention scores ("affinities")
-        w = einsum(q, k, "... T1 head_size, ... T2 head_size -> ... T1 T2")  # (B,num_heads,T,T)
-        w = w.masked_fill(self.tril[:, :, :T, :T] == 0, float("-inf"))  # (B,num_heads,T,T)
-        w = F.softmax(w, dim=-1)  # (B,num_heads,T,T)
-        w = self.attn_dropout(w)
-        # perform weighted aggregation of the values
-        out = w @ v  # (B,num_heads,T,T) X (B,num_heads,T,head_size) -> (B,num_heads,T,head_size)
+        
+        # casual attention: (B, n_heads, T, head_size) x (B, n_heads, head_size, T) -> (B, n_heads, T, T)
+        if use_flash:
+            out = F.scaled_dot_product_attention(q, k, v, attn_mask=None, is_causal=True)
+        else:
+            print("Not using flash attention")
+            # compute attention scores ("affinities")
+            w = einsum(q, k, "... T1 head_size, ... T2 head_size -> ... T1 T2")  # (B,num_heads,T,T)
+            w = w.masked_fill(self.tril[:, :, :T, :T] == 0, float("-inf"))  # (B,num_heads,T,T)
+            w = F.softmax(w, dim=-1)  # (B,num_heads,T,T)
+            w = self.attn_dropout(w)
+            # perform weighted aggregation of the values
+            out = w @ v  # (B,num_heads,T,T) X (B,num_heads,T,head_size) -> (B,num_heads,T,head_size)
+        
         out = rearrange(out, "B n_heads T head_size -> B T (n_heads head_size)")  # (B,T,n_embed)
         # perform weighted aggregation of the values
         out = self.res_dropout(self.proj(out))
