@@ -198,3 +198,23 @@ Now that training works, we want to speed it up significantly to get my money's 
     - Enable tensor cores with TF32 precision in PyTorch with a single line controlling matmul precision. **Always try to use it**. You get great speedup with almost no code changes.
     - The gap between promised and actual speedup using TF32 varies because workloads are still memory-bound. Even though tensor cores make matrix multiplies faster with TF32, you are still moving FP32 values through memory between operations
     - With TF32 `high` (A6000 Ada): GPU is using ~35 GB, toks/s: ~30.8K, dt: ~530ms 
+
+
+### Mixed Precision Training with BF16
+
+<img src="images/different-precisions.png" alt="bf16 vs fp16" style="max-width: 500px;">
+
+- BF16 vs FP16 Precision Format:
+    - BF16 (BrainFloat 16) keeps FP32's sign and exponent bits but truncates the mantissa further (sign bit: 1, exponent bit: 8, mantissa bit: 7)
+    - This preserves the full dynamic range while reducing precision, which is the key advantage over FP16 (sign bit: 1, exponent bit: 5, mantissa bit: 10)
+    - FP16 reduces the range significantly, which historically required gradient scalers and added complexity to training. See [Automatic Mixed Precision](https://docs.pytorch.org/tutorials/recipes/recipes/amp_recipe.html#adding-gradscaler) for more details.
+    - On Ampere GPUs and above, BF16 avoids gradient scaling headaches entirely
+- Implementation with PyTorch `Autocast`:
+    - Enable mixed precision using `torch.autocast` following PyTorch's best practices and wrap only the model forward pass and loss calculation with autocast (mixed precision only).
+    - Leave the backward pass and optimizer step outside autocast (no manual `.bfloat16()` calls on tensors)
+- How Mixed Precision Works:
+    - With autocast enabled, activations (like logits) automatically become BF16
+    - Model parameters (like `model.transformer.wte.weight`) remain in FP32 for stability
+    - PyTorch intelligently selects which operations run in lower precision. Usually, matrix multiplications typically run in BF16 for speed. Numerically sensitive operations (softmax, layer norms, losses) stay in FP32 for accuracy
+- With BF16 autocast (A6000 Ada): GPU VRAM: ~33.8 GB, toks/s: ~38.6K, dt: ~423ms (improvement over TF32)
+    - This comes at the cost of slightly less numeric precision for better performance. However, the precision loss can be offset by training for longer if needed

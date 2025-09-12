@@ -291,7 +291,12 @@ for i in range(50):
     x, y = train_loader.get_batch()
     x, y = x.to(device), y.to(device)
     optimizer.zero_grad(set_to_none=True)
-    logits, loss = model(x, y)
+    # use bfloat16 for the model forward pass, supported on Ampere and above
+    # note since we are using bf16 and not f16, we don't need to use gradient scaler
+    # As bf16 has the same range as fp32
+    # Karpathy suggests to only refer to https://docs.pytorch.org/tutorials/recipes/recipes/amp_recipe.html#adding-torch-autocast
+    with torch.autocast(device_type=device, dtype=torch.bfloat16):
+        logits, loss = model(x, y)
     loss.backward()
     optimizer.step()
     # torch.cuda.synchronize() to ensure the GPU finishes before timing
