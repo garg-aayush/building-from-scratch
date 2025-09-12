@@ -127,7 +127,7 @@ class FeedForward(nn.Module):
         self.net = nn.Sequential(
             # 4* to match the Transformer paper
             nn.Linear(n_embed, 4 * n_embed),
-            nn.ReLU(),
+            nn.GELU(), # instead of ReLU
             nn.Linear(4 * n_embed, n_embed),
             nn.Dropout(dropout),
         )
