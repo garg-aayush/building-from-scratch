@@ -281,7 +281,8 @@ train_loader = DataLoaderLite(B=16, T=1024)
 torch.set_float32_matmul_precision("high")
 
 # get logits
-model = GPT(GPTConfig())  # random model initialization
+# use a "nice" number for the vocabulary size
+model = GPT(GPTConfig(vocab_size=50304))  # random model initialization
 print("Model loaded successfully")
 model.to(device)
 # use torch.compile to further speedup the model
