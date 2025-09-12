@@ -198,7 +198,7 @@ Now that training works, we want to speed it up significantly to get my money's 
     - Enable tensor cores with TF32 precision in PyTorch with a single line controlling matmul precision. **Always try to use it**. You get great speedup with almost no code changes.
     - The gap between promised and actual speedup using TF32 varies because workloads are still memory-bound. Even though tensor cores make matrix multiplies faster with TF32, you are still moving FP32 values through memory between operations
     - With TF32 `high` (A6000 Ada): GPU is using ~35 GB, toks/s: ~30.8K, dt: ~530ms 
-
+---
 
 ### Mixed Precision Training with BF16
 
@@ -218,3 +218,36 @@ Now that training works, we want to speed it up significantly to get my money's 
     - PyTorch intelligently selects which operations run in lower precision. Usually, matrix multiplications typically run in BF16 for speed. Numerically sensitive operations (softmax, layer norms, losses) stay in FP32 for accuracy
 - With BF16 autocast (A6000 Ada): GPU VRAM: ~33.8 GB, toks/s: ~38.6K, dt: ~423ms (improvement over TF32)
     - This comes at the cost of slightly less numeric precision for better performance. However, the precision loss can be offset by training for longer if needed
+---
+
+### Using `torch.compile`
+- Graph Compilation for Neural Networks:
+    - `torch.compile` is effectively a compiler for neural networks. It is enabled with a single line that wraps the model with some upfront compilation cost, but with significant speedup during execution.
+    - With `torch.compile` (A6000 Ada): GPU VRAM: ~22.3 GB, toks/s: ~80.0K, dt: ~204ms
+- torch.compile under the hood:
+    - Without compilation, the Python interpreter steps through the forward pass operation-by-operation (in sort of `eager` mode)
+    - Each operation launches a separate kernel and materializes intermediate results in GPU High Bandwidth Memory (HBM). Thus, you get expensive round trips: read from HBM → on-chip caches/registers → compute → write back to HBM
+    - The main speedup using `torch.compile` comes from reducing Python overhead and minimizing GPU memory read/writes. Since `torch.compile` sees the entire computational graph, it can remove Python overhead and fuse kernels, keeping data on-chip for multiple elementwise operations before a single writeback. This kernel fusion dramatically reduces expensive HBM traffic that you would otherwise experience. You can read more about it in [torch.compile tutorial](https://docs.pytorch.org/tutorials/intermediate/torch_compile_tutorial.html).
+
+- GPU Memory Hierarchy and Performance Bottlenecks:
+    <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
+    <img src="images/GPU-memory-1.png" alt="GPU Memory Hierarchy" style="max-width: 300px; height: auto;">
+    <img src="images/GPU-memory-2.png" alt="GPU Memory Performance" style="max-width: 300px; height: auto;">
+    </div>
+    
+    <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
+    <img src="images/GPU-memory-3.webp" alt="GPU Memory Architecture" style="max-width: 600px; height: auto;">
+    </div>
+
+    - High Bandwidth Memory (HBM):
+        - Large capacity (tens of GB on A100/H100) but relatively slow access
+        - This is where model parameters, activations, and gradients are stored. It acts as the main memory for GPU operations. Even with ~1-2 TB/s bandwidth, accessing HBM is expensive compared to on-chip memory
+    - On-Chip Memory Hierarchy (fastest to slowest):
+        - We have three levels of on-chip memory: registers, L1 cache/shared memory, and L2 cache.
+        - Registers: Fastest memory directly accessible by compute cores, but extremely limited capacity
+        - L1 Cache/Shared Memory: Fast per-SM memory, typically 64-128 KB per SM
+        - L2 Cache: Shared across all SMs, several MB capacity, faster than HBM but slower than L1
+    - Performance Bottlenecks:
+        - Mostly deep learning operations are limited by how fast data can move between HBM and compute units, not by computational throughput. Tensor cores can sit idle waiting for data from HBM, leading to poor utilization (often ~60% even in well-tuned applications)
+        - This is where torch.compile comes in.
+---

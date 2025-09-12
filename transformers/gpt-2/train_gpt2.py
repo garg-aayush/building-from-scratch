@@ -282,6 +282,8 @@ torch.set_float32_matmul_precision("high")
 model = GPT(GPTConfig())  # random model initialization
 print("Model loaded successfully")
 model.to(device)
+# use torch.compile to further speedup the model
+model = torch.compile(model)
 
 # optimize
 # overfitting on a single set of batch
