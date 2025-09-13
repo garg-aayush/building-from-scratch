@@ -322,4 +322,17 @@ Now that training works, we want to speed it up significantly to get my money's 
         - **"no-decay" group**: Biases and 1-D tensors like LayerNorm scales (parameters with dimension < 2) that shouldn't be regularized
         - Most parameters get decayed, but biases and LayerNorm gains are excluded from weight decay
     - We also enable the fused AdamW implementation when available (checked via `inspect.signature`) which fuses per-tensor updates into a single CUDA kernel, saving overhead and reducing step time
- 
+
+### Gradient Accumulation and Batch Size Scaling
+- We implement gradient accumulation to achieve large effective batch sizes that won't fit in GPU memory following GPT-3's approach of using larger batch sizes for better training stability
+- Why Gradient Accumulation is Necessary:
+  - GPT-3 paper shows larger models benefit from larger batch sizes (~0.5M tokens) for improved gradient estimates and training stability
+  - We cannot fit such large batches directly on a single GPU due to memory constraints
+  - We solve this by accumulating gradients across multiple smaller micro-batches before taking an optimizer step
+- We set a total target batch size of 2**19=524,288 tokens to approximate GPT-3's recommendations
+    - We use micro-batches of `B=16` sequences with length `T=1024`, processing 16×1024=16,384 tokens per micro-step
+    - We accumulate gradients for 32 micro-steps (524,288 ÷ 16,384 = 32) before performing a single optimizer update
+- Critical Implementation Detail: We must scale each micro-batch loss by `1/grad_accum_steps` before calling `backward()`
+    - Most PyTorch losses use `reduction='mean'` by default
+    - Naively summing losses via repeated `loss.backward()` calls effectively changes the objective from taking the mean over the large batch to summing means across micro-batches
+    - We divide each micro-loss by `grad_accum_steps` to maintain mathematically equivalent gradients to a single large batch

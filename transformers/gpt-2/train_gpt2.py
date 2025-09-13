@@ -301,10 +301,18 @@ elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
 print(f"Using device: {device}")
 
 # get a data batch
-train_loader = DataLoaderLite(B=16, T=1024)
+total_batch = 524288 # 2^19, ~0.5M tokens
+B = 16
+T = 1024
+assert total_batch % (B * T) == 0, f"Total batch size {total_batch} is not divisible by B*T={B * T}"
+grad_accum_steps = total_batch // (B * T)
+print(f"Total desired batch size: {total_batch}")
+print(f"gradient accumulation steps: {grad_accum_steps}")
+
+train_loader = DataLoaderLite(B=B, T=T)
+
 # use tf32
 torch.set_float32_matmul_precision("high")
-
 # get logits
 # use a "nice" number for the vocabulary size
 model = GPT(GPTConfig(vocab_size=50304))  # random model initialization
@@ -336,16 +344,25 @@ def get_lr(step):
 optimizer = model.configure_optimizers(weight_decay=0.1, learning_rate=max_lr, device=device)
 for step in range(max_steps):
     t0 = time.time()
-    x, y = train_loader.get_batch()
-    x, y = x.to(device), y.to(device)
     optimizer.zero_grad(set_to_none=True)
-    # use bfloat16 for the model forward pass, supported on Ampere and above
-    # note since we are using bf16 and not f16, we don't need to use gradient scaler
-    # As bf16 has the same range as fp32
-    # Karpathy suggests to only refer to https://docs.pytorch.org/tutorials/recipes/recipes/amp_recipe.html#adding-torch-autocast
-    with torch.autocast(device_type=device, dtype=torch.bfloat16):
-        logits, loss = model(x, y)
-    loss.backward()
+    # accumulate gradients over multiple steps
+    loss_accum = 0.0
+    for _ in range(grad_accum_steps):
+        x, y = train_loader.get_batch()
+        x, y = x.to(device), y.to(device)
+        # use bfloat16 for the model forward pass, supported on Ampere and above
+        # note since we are using bf16 and not f16, we don't need to use gradient scaler
+        # As bf16 has the same range as fp32
+        # Karpathy suggests to only refer to https://docs.pytorch.org/tutorials/recipes/recipes/amp_recipe.html#adding-torch-autocast
+        with torch.autocast(device_type=device, dtype=torch.bfloat16):
+            logits, loss = model(x, y)
+        # we have to scale down the loss by the number of gradient accumulation steps 
+        # because the gradients just add up on each successive step (loss.backward())
+        # and we want mean instead of sum
+        loss = loss / grad_accum_steps
+        loss_accum += loss.detach()
+        loss.backward()
+    
     # global norm gradient clipping at 1.0
     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
     # determine and set the learning rate for the current step
@@ -358,8 +375,8 @@ for step in range(max_steps):
     t1 = time.time()
     dt = (t1 - t0) * 1000 # convert to ms
     # tokens per second is a better metric than dt because it is independent of the batch size and sequence length
-    tokens_per_second = (train_loader.B * train_loader.T) / (t1-t0)
-    print(f"step: {step:04d}, loss: {loss.item():.4f} | lr: {lr:.4e} | norm: {norm:.4f} | dt: {dt:.2f} ms | tok/s: {tokens_per_second:.2f}")
+    tokens_per_second = (train_loader.B * train_loader.T) * grad_accum_steps / (t1-t0) 
+    print(f"step: {step:04d}, loss: {loss_accum.item():.4f} | lr: {lr:.4e} | norm: {norm:.4f} | dt: {dt:.2f} ms | tok/s: {tokens_per_second:.2f}")
 
 import sys
 
