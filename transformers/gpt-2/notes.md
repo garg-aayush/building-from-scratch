@@ -304,3 +304,22 @@ Now that training works, we want to speed it up significantly to get my money's 
   - **Minimum plateau**: LR stays at the minimum value for remaining training steps to maintain stable convergence
 - We reference GPT-3's approach where they decay to 10% of the initial LR by 260B tokens and continue at 10% until 300B tokens. For simplicity, we approximate this with a single decay horizon
 - We implement a custom `get_lr(step)` function and manually update the optimizer's parameter group learning rate at each iteration rather than using PyTorch's built-in schedulers (Andrej personal preference)
+
+### Weight Decay and Optimizer Configuration
+- In GPT-3, they use linear batch size ramping
+- **Why Linear Batch Size Ramping Works**:
+  - In early training, we observe that the model learns basic token frequency patterns first - distinguishing between frequent vs. rare tokens in the training set
+  - During this phase, each example provides highly similar gradient information since they all convey the same basic frequency signal: "use these common tokens, ignore these rare tokens"
+  - We find that gradients across examples are extremely correlated when learning these fundamental patterns
+  - Large batch sizes provide minimal additional gradient information when gradients are highly correlated, making smaller batch sizes more computationally efficient
+  - Once basic token frequencies are learned, gradients become more decorrelated across examples, and larger batch sizes provide genuine statistical power for improved gradient estimates
+  - We choose to skip this ramping strategy as the systems benefit (throughput) outweighs the algorithmic benefit without being crucial for our implementation
+- We skip GPT-3's linear batch size ramping to keep arithmetic simple and it also complicates token accounting
+- We implement weight decay of 0.1 following GPT-3's approach via AdamW optimizer
+    - This is a small amount of regularization to prevent overfitting and improve generalization as this ensures no parameter becomes too large
+    - Also, we create two parameter groups:
+        - **"decay" group**: Matrix weights and embeddings (parameters with dimension ≥ 2) that should be regularized
+        - **"no-decay" group**: Biases and 1-D tensors like LayerNorm scales (parameters with dimension < 2) that shouldn't be regularized
+        - Most parameters get decayed, but biases and LayerNorm gains are excluded from weight decay
+    - We also enable the fused AdamW implementation when available (checked via `inspect.signature`) which fuses per-tensor updates into a single CUDA kernel, saving overhead and reducing step time
+ 
