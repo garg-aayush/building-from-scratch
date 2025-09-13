@@ -289,8 +289,8 @@ model.to(device)
 model = torch.compile(model)
 
 # optimize
-# overfitting on a single set of batch
-optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+# update the optimizer to use the same hyperparameters as GPT-3
+optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps=1e-8)
 for i in range(50):
     t0 = time.time()
     x, y = train_loader.get_batch()
@@ -303,6 +303,8 @@ for i in range(50):
     with torch.autocast(device_type=device, dtype=torch.bfloat16):
         logits, loss = model(x, y)
     loss.backward()
+    # global norm gradient clipping at 1.0
+    norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
     optimizer.step()
     # torch.cuda.synchronize() to ensure the GPU finishes before timing
     torch.cuda.synchronize()
@@ -310,7 +312,7 @@ for i in range(50):
     dt = (t1 - t0) * 1000 # convert to ms
     # tokens per second is a better metric than dt because it is independent of the batch size and sequence length
     tokens_per_second = (train_loader.B * train_loader.T) / (t1-t0)
-    print(f"step: {i}, loss: {loss.item()}, dt: {dt:.2f} ms, tok/s: {tokens_per_second:.2f}")
+    print(f"step: {i:04d}, loss: {loss.item():.4f} | norm: {norm:.4f} | dt: {dt:.2f} ms | tok/s: {tokens_per_second:.2f}")
 
 import sys
 

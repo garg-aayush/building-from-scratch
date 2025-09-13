@@ -268,3 +268,31 @@ Now that training works, we want to speed it up significantly to get my money's 
     - CUDA kernels are optimized around powers of two dimensions (16, 32, 64, 128, 256, 512, 1024...)
     - "Ugly" dimensions like 50,257 force inefficient boundary conditions in CUDA kernels
 - With "nice" numbers (A6000 Ada): GPU VRAM: ~13.1 GB, toks/s: ~107.5K, dt: ~152ms (Marginal improvement)
+
+- **Note on Environment Dependencies**: 
+    - Current benchmarks are using CUDA 12.8 and PyTorch version 2.8.0
+    - Performance results may vary with different CUDA/PyTorch versions
+    - For example, with CUDA 12.8 and PyTorch 2.8.0.dev20250319+cu128:
+        - With "nice" numbers (A6000 Ada): GPU VRAM: ~18.8 GB, toks/s: ~103K, dt: ~160ms
+        - This shows how environment changes can impact both memory usage and performance metrics
+
+## Section III: Algorithmic Changes and Optimization
+
+- We are now shifting focus from GPU utilization optimizations to algorithmic changes and training optimization strategies
+- GPT-2 paper is vague on optimization details, so we will reference the GPT-3 paper for more concrete hyperparameters and algo-changes. Moreover, GPT-2 paper doesn't release the weights and code, just the model architecture and inference code.
+- Architectureally, GPT-2 and GPT-3 are very similar with minor differences:
+    - Context length increased from 1024 → 2048 tokens
+    - Some minor Transformer hyperparameter adjustments
+    - GPT-3 was trained much longer on a larger dataset with more thorough evaluation
+    - GPT-3's flagship model has 175B parameters vs GPT-2's largest at 1.6B
+- We will copy GPT-3's training settings wherever possible to ensure robust optimization
+---
+
+### AdamW and Gradient Clipping
+- We configure AdamW with specific hyperparameters that differ from PyTorch defaults as per GPT-3 paper recommendations with beta1=0.9, beta2=0.95 and epsilon=1e-8 (default is beta1=0.9 and beta2=0.999 and epsilon=1e-8)
+- We implement global norm gradient clipping at 1.0 immediately after `loss.backward()`
+  - This prevents catastrophic gradient explosions from rare, problematic batches that could destabilize training
+  - Clipping acts as a safety mechanism - when gradients become too large, they're scaled down proportionally. 
+  - It is a good idea to monitor the gradient norm at each training step for diagnostics. If norm is increasing, it can indicate transient training instability.
+---
+
