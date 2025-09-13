@@ -336,3 +336,37 @@ Now that training works, we want to speed it up significantly to get my money's 
     - Most PyTorch losses use `reduction='mean'` by default
     - Naively summing losses via repeated `loss.backward()` calls effectively changes the objective from taking the mean over the large batch to summing means across micro-batches
     - We divide each micro-loss by `grad_accum_steps` to maintain mathematically equivalent gradients to a single large batch
+
+### Distributed Data Parallel (DDP)
+- We scale to multiple GPUs using Distributed Data Parallel (DDP) to achieve higher throughput and handle larger datasets
+- DDP utilizes environment variables that expose `RANK`, `LOCAL_RANK`, and `WORLD_SIZE` to coordinate across processes:
+  - **RANK**: Global process identifier across all nodes
+  - **LOCAL_RANK**: Process identifier within the current node (maps to GPU device)
+  - **WORLD_SIZE**: Total number of processes across all nodes
+- Rank 0 is designated as the master process responsible for printing, logging, and checkpointing while all other ranks run the same training code
+- You can guard the print statements behind `if master_process:` to avoid duplicate logging from multiple processes
+- Data Loading Strategy for DDP
+    - We implement a minimal data loader that is aware of the distributed training setup
+        - We implement data sharding across ranks to ensure each process sees different portions of the dataset. We do this by passing `rank` and `world_size` parameters to the dataloader for proper sharding
+        - We set the initial cursor position to `rank*(B*T)` so each rank starts reading from a different offset:
+            - Rank 0 reads the first window of tokens
+            - Rank 1 reads the next window, and so on
+- Model Wrapping and Gradient Synchronization
+    - We wrap our model in `DistributedDataParallel(device_ids=[ddp_local_rank])` to enable automatic gradient synchronization
+        - We keep the forward pass unchanged - DDP handles the distributed aspects transparently.
+        - After `backward()`, DDP automatically all-reduces and averages gradients across all ranks
+    - Critical Implementation for Gradient Accumulation: 
+        - We control when gradient synchronization occurs during micro-batching/
+        - We don't want to synchronize gradients after every micro-step as this would be inefficient. Only synchronize on the final micro-step of each gradient accumulation cycle
+        - Instead of using PyTorch's `no_sync()` context manager, we directly toggle DDP's internal `require_backward_grad_sync` flag to avoid code duplication
+        - This approach avoids code duplication but relies on an internal PyTorch flag that could change in future releases
+- Make sure to add an explicit `destroy_process_group()` on exit to prevent complaints when processes terminate before properly cleaning up the process group
+- The training can be launched with the following command:
+    ```bash
+    torchrun --nproc_per_node=<num_gpus> train_gpt2.py
+    ```
+    - Note: You may need to set the `NCCL_P2P_DISABLE` environment variable to `1` to avoid communication issues between GPUs. For example, I was unable to run the code with `torchrun --nproc_per_node=8 train_gpt2.py` without setting this environment variable (my gpu setting: 2xRTX4090)
+    - NCCL_P2P_DISABLE is a environment variable that disables peer-to-peer communication between GPUs in NCCL (NVIDIA Collective Communications Library)
+        - Without this flag: GPUs try to communicate directly with each other through high-speed interconnects (NVLink, PCIe, etc.)
+        - With this flag: GPU communication is routed through the CPU/system memory as an intermediary
+    - Also, I dont see the full throughput of the GPUs when using DDP. I think it is because of the communication overhead between GPUs.
