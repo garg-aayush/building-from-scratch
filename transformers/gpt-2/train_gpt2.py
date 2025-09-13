@@ -289,9 +289,27 @@ model.to(device)
 model = torch.compile(model)
 
 # optimize
+max_lr = 6e-4
+min_lr = max_lr * 0.1
+warmup_steps = 10
+max_steps = 50
+# cosine decay learning-rate schedule with warmup
+def get_lr(step):
+    # 1) linear warmup
+    if step < warmup_steps:
+        return max_lr * (step + 1) / warmup_steps
+    # 2) if step > max_steps, return min_lr
+    if step > max_steps:
+        return min_lr
+    # 3) otherwise, use cosine decay
+    decay_ratio = (step - warmup_steps) / (max_steps - warmup_steps)
+    assert 0 <= decay_ratio <= 1
+    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
+    return min_lr + coeff * (max_lr - min_lr)
+
 # update the optimizer to use the same hyperparameters as GPT-3
-optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps=1e-8)
-for i in range(50):
+optimizer = torch.optim.AdamW(model.parameters(), betas=(0.9, 0.95), eps=1e-8)
+for step in range(max_steps):
     t0 = time.time()
     x, y = train_loader.get_batch()
     x, y = x.to(device), y.to(device)
@@ -305,6 +323,10 @@ for i in range(50):
     loss.backward()
     # global norm gradient clipping at 1.0
     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+    # determine and set the learning rate for the current step
+    lr = get_lr(step)
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
     optimizer.step()
     # torch.cuda.synchronize() to ensure the GPU finishes before timing
     torch.cuda.synchronize()
@@ -312,7 +334,7 @@ for i in range(50):
     dt = (t1 - t0) * 1000 # convert to ms
     # tokens per second is a better metric than dt because it is independent of the batch size and sequence length
     tokens_per_second = (train_loader.B * train_loader.T) / (t1-t0)
-    print(f"step: {i:04d}, loss: {loss.item():.4f} | norm: {norm:.4f} | dt: {dt:.2f} ms | tok/s: {tokens_per_second:.2f}")
+    print(f"step: {step:04d}, loss: {loss.item():.4f} | lr: {lr:.4e} | norm: {norm:.4f} | dt: {dt:.2f} ms | tok/s: {tokens_per_second:.2f}")
 
 import sys
 

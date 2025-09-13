@@ -296,3 +296,11 @@ Now that training works, we want to speed it up significantly to get my money's 
   - It is a good idea to monitor the gradient norm at each training step for diagnostics. If norm is increasing, it can indicate transient training instability.
 ---
 
+### Cosine Decay Learning Rate Schedule with Warmup
+- We implement a cosine decay learning-rate schedule with warmup rather than using a fixed learning rate throughout training as per GPT-3 paper recommendations with max_lr=6e-4 and min_lr=10% of max_lr (default PyTorch optimizers use fixed learning rates)
+- We implement a three-phase learning rate schedule that updates at each training step:
+  - **Linear warmup**: LR ramps linearly from near zero to the maximum learning rate over the first few steps to prevent early training instability
+  - **Cosine decay**: LR decays following a cosine curve from maximum to minimum learning rate using the formula: `min_lr + 0.5 * (max_lr - min_lr) * (1 + cos(pi * decay_ratio))`
+  - **Minimum plateau**: LR stays at the minimum value for remaining training steps to maintain stable convergence
+- We reference GPT-3's approach where they decay to 10% of the initial LR by 260B tokens and continue at 10% until 300B tokens. For simplicity, we approximate this with a single decay horizon
+- We implement a custom `get_lr(step)` function and manually update the optimizer's parameter group learning rate at each iteration rather than using PyTorch's built-in schedulers (Andrej personal preference)
