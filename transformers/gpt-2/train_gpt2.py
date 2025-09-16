@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import os
 import tiktoken
 import torch
+import numpy as np
 
 # Set NCCL environment variable for DDP stability
 os.environ['NCCL_P2P_DISABLE'] = '1'
@@ -269,25 +270,26 @@ class GPT(nn.Module):
 
 # -------------------------------------------------------------------------#
 class DataLoaderLite:
-    def __init__(self, B, T, process_rank, num_processes):
+    def __init__(self, B, T, process_rank, num_processes, split, data_root='~/data/shards'):
         self.B = B
         self.T = T
         self.process_rank = process_rank
         self.num_processes = num_processes
+        assert split in ["train", "val"], f"Invalid split: {split}"
+        
+        # get the shards filenames
+        shards = [s for s in os.listdir(data_root) if split in s]
+        shards = sorted(shards)
+        shards = [os.path.join(data_root, s) for s in shards]
+        self.shards = shards
+        assert len(shards) > 0, f"No shards found for split: {split}"
 
         # load the dataset
-        # data has approximately 40K lines, 200K words, 1M bytes
-        with open("data/input.txt", "r", encoding="utf-8") as f:
-            text = f.read()
-        enc = tiktoken.get_encoding("gpt2")
-        tokens = enc.encode(text)
-        self.tokens = torch.tensor(tokens, dtype=torch.long)
-        print(f"Loaded {len(self.tokens)} tokens")
-        print(f"1 epoch has {len(self.tokens) // (self.B * self.T)} batches")
-
-        # set state
+        self.cur_shard = 0
+        self.tokens = self._load_tokens(self.shards[self.cur_shard])
         self.cur_pos = self.process_rank * (self.B * self.T)
 
+        
     def get_batch(self):
         B, T = self.B, self.T
         buf = self.tokens[self.cur_pos : self.cur_pos + B * T + 1]
@@ -295,10 +297,18 @@ class DataLoaderLite:
         y = buf[1:].view(B, T)  # output of the model
         # advance position
         self.cur_pos += B * T * self.num_processes
-        # if loading past the end of the dataset, loop back to the beginning
+        
+        # if loading next batch is out of bounds, load the next shard
         if self.cur_pos + B * T * self.num_processes + 1 > len(self.tokens):
-            self.cur_pos = 0
+            self.cur_shard = (self.cur_shard + 1) % len(self.shards)
+            self.tokens = self._load_tokens(self.shards[self.cur_shard])
+            self.cur_pos = self.process_rank * (self.B * self.T)
+        
         return x, y
+    
+    def _load_tokens(self, filename):
+        np_tensor = np.load(filename)
+        return torch.tensor(np_tensor, dtype=torch.long)
 # -------------------------------------------------------------------------#
 
 # setup DDP training
@@ -339,7 +349,7 @@ if device_type == "cuda":  # Fixed: only set CUDA seed if using CUDA
 
 # get a data batch
 total_batch = 524288 # 2^19, ~0.5M tokens
-B = 16
+B = 64
 T = 1024
 assert total_batch % (B * T * ddp_world_size) == 0, f"Total batch size {total_batch} is not divisible by B*T*WORLD_SIZE={B * T * ddp_world_size}"
 grad_accum_steps = total_batch // (B * T * ddp_world_size)
@@ -349,7 +359,7 @@ if master_process:
 
 print(f"DDP rank: {ddp_rank}, local rank: {ddp_local_rank}, world size: {ddp_world_size}")
 
-train_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size)
+train_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="train", data_root="/root/data/shards")
 
 # use tf32
 torch.set_float32_matmul_precision("high")
@@ -363,8 +373,8 @@ model.to(device)
 # optimize
 max_lr = 6e-4
 min_lr = max_lr * 0.1
-warmup_steps = 10
-max_steps = 50
+warmup_steps = 715 # this is from original GPT-3 paper, and is too conservative, we can even go with like 100 steps
+max_steps = 19073  # 10BT/2^19
 # cosine decay learning-rate schedule with warmup
 def get_lr(step):
     # 1) linear warmup

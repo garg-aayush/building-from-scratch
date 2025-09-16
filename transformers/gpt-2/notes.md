@@ -370,3 +370,38 @@ Now that training works, we want to speed it up significantly to get my money's 
         - Without this flag: GPUs try to communicate directly with each other through high-speed interconnects (NVLink, PCIe, etc.)
         - With this flag: GPU communication is routed through the CPU/system memory as an intermediary
     - Also, I dont see the full throughput of the GPUs when using DDP. I think it is because of the communication overhead between GPUs.
+
+
+
+### Training Dataset
+- GPT-2 and GPT-3 used the following datasets:
+    - **GPT-2** used the "WebText" dataset which was never released
+        - They scraped all outbound links from Reddit with at least 3 karma as their starting point
+        - They collected all web pages and text from these links: 45 million links resulting in 40GB of text
+    - There was an attempt at reproducing it called [OpenWebText](https://huggingface.co/datasets/Skylion007/openwebtext)
+        
+    - **GPT-3** expanded beyond just Reddit links to include a curated mixture:
+        - Large portion from filtered Common Crawl (though it's extremely noisy by default - full of ad spam, random tables, numbers, stock tickers)
+        - WebText data from GPT-2 (Reddit outbound links)
+        - Books, Wikipedia, and other curated sources
+        - This dataset was also never released
+    
+- Modern public approximations that are representative of these training mixtures:
+    - **RedPajama dataset** (or more specifically [SlimPajama](https://www.cerebras.ai/blog/slimpajama-a-627b-token-cleaned-and-deduplicated-version-of-redpajama) - a cleaned and deduplicated subset)
+        - Contains Common Crawl, C4, GitHub, books, archive, Wikipedia, StackExchange (627B tokens)
+    - [**FineWeb dataset**](https://huggingface.co/spaces/HuggingFaceFW/blogpost-fineweb-v1) - This is our preferred choice for high-quality Common Crawl data
+        - Filters Common Crawl to 15 trillion tokens of high quality content
+        - It also has a [**FineWeb-Edu subset**](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu): 1.3T "educational" + 5.4T "high educational" tokens
+        - Uses LLM-based filtering (Llama-3-70B) to judge educational content quality
+
+- We chose to work with the **FineWeb-Edu 10B token sample**:
+    - Simple enough to work with for our training setup
+    - Good balance between quality and computational requirements
+    - Should be sufficient to get close to GPT-2 performance
+
+- We implemented a preprocessing script that downloads FineWeb-Edu via Hugging Face `datasets` and create training and validation tokens using [Modal](https://modal.com/). Please see the [fineweb-modal.py](fineweb-modal.py) file for more details. 
+
+- We configured our training parameters to match GPT-3 specifications:
+    - Per-step tokens: 2e19  (~0.5M) tokens
+    - Target: ~10B tokens total → 10,000,000,000 / 524,288 ≈ 19,073 steps (this is from original GPT-3 paper, and is too conservative, we can even go with like 100 steps)
+    - Warmup: 375M tokens (per GPT-3) → 375,000,000 / 524,288 ≈ 715 warmup steps (this is from original GPT-3 paper, and is too conservative, we can even go with like 100 steps)
