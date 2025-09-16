@@ -370,7 +370,7 @@ Now that training works, we want to speed it up significantly to get my money's 
         - Without this flag: GPUs try to communicate directly with each other through high-speed interconnects (NVLink, PCIe, etc.)
         - With this flag: GPU communication is routed through the CPU/system memory as an intermediary
     - Also, I dont see the full throughput of the GPUs when using DDP. I think it is because of the communication overhead between GPUs.
-
+---
 
 
 ### Training Dataset
@@ -405,3 +405,13 @@ Now that training works, we want to speed it up significantly to get my money's 
     - Per-step tokens: 2e19  (~0.5M) tokens
     - Target: ~10B tokens total → 10,000,000,000 / 524,288 ≈ 19,073 steps (this is from original GPT-3 paper, and is too conservative, we can even go with like 100 steps)
     - Warmup: 375M tokens (per GPT-3) → 375,000,000 / 524,288 ≈ 715 warmup steps (this is from original GPT-3 paper, and is too conservative, we can even go with like 100 steps)
+---
+
+### Validation and Generation Steps
+- We implemented validation evaluation and text generation to monitor training progress.
+- Validation helps us monitor overfitting, though with our large dataset and 1 epoch training we expect train/val losses to be similar. It's monitoring is especially important if we were to train for multiple epochs to detect memorization
+- We can also compare against GPT-2 124M's validation loss on FineWeb-Edu to get a reference point (though not perfectly fair since GPT-2 was trained on different data)
+- Note, we created a separate PyTorch generator object for sampling to avoid affecting the training RNG state
+    - Each rank gets a different seed for the sampling generator
+    - Pass the generator object to `multinomial()` for controlled random sampling
+---
