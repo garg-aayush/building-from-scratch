@@ -1,7 +1,8 @@
 # simple run
 # python train_gpt2.py
 # ddp run
-# NCCL_P2P_DISABLE=1 torchrun --nproc_per_node=<num_gpus> train_gpt2.py
+# torchrun --nproc_per_node=<num_gpus> train_gpt2.py
+# NCCL_P2P_DISABLE=1 torchrun --nproc_per_node=<num_gpus> train_gpt2.py # in case you get ddp error, this helped me run script on RTX6000 ada comsumer gpus
 
 import math
 from dataclasses import dataclass
@@ -11,8 +12,6 @@ import torch
 import numpy as np
 from hellaswag import render_example, iterate_examples
 
-# Set NCCL environment variable for DDP stability
-os.environ['NCCL_P2P_DISABLE'] = '1'
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import einsum, rearrange
@@ -379,7 +378,7 @@ if device_type == "cuda":  # Fixed: only set CUDA seed if using CUDA
 
 # get a data batch
 total_batch = 524288 # 2^19, ~0.5M tokens
-B = 32
+B = 64
 T = 1024
 assert total_batch % (B * T * ddp_world_size) == 0, f"Total batch size {total_batch} is not divisible by B*T*WORLD_SIZE={B * T * ddp_world_size}"
 grad_accum_steps = total_batch // (B * T * ddp_world_size)
@@ -389,8 +388,8 @@ if master_process:
 
 print(f"DDP rank: {ddp_rank}, local rank: {ddp_local_rank}, world size: {ddp_world_size}")
 
-train_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="train", data_root="/root/data/shards")
-val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val", data_root="/root/data/shards")
+train_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="train", data_root="/root/shards")
+val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val", data_root="/root/shards")
 
 # use tf32
 torch.set_float32_matmul_precision("high")
@@ -448,7 +447,7 @@ for step in range(max_steps):
     last_step = (step == max_steps - 1)
     
     # validation
-    if step % 10 == 0 or last_step:
+    if step % 250 == 0 or last_step:
         model.eval()
         val_loader.reset()
         with torch.no_grad():
@@ -469,7 +468,7 @@ for step in range(max_steps):
                 f.write(f"{step} val_loss: {val_loss_accum.item():.4f}\n")
     
     # hellaswag
-    if (step % 10 == 0 or last_step):
+    if (step % 250 == 0 or last_step):
         num_correct_norm = 0
         num_total = 0
         for i, example in enumerate(iterate_examples("val")):
@@ -503,7 +502,7 @@ for step in range(max_steps):
                 
 
     # generate samples from the model (except at step 0)
-    if step % 10 == 0 or last_step:
+    if step % 250 == 0 or last_step:
         model.eval()
         num_return_sequences = 4
         max_seq_len = 32
