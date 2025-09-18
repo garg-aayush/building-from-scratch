@@ -438,3 +438,12 @@ Now that training works, we want to speed it up significantly to get my money's 
     - We create a batch of 4 rows × T tokens, shared context tokens across all rows, four different completion options, pad to longest option length, use mask for active tokens, and track correct label (e.g., option 3).
     - We calculate cross-entropy loss for each completion option, select option with lowest average loss (highest probability)
     - You can see the implementation in [hellaswag.py](hellaswag.py)
+
+### Baseline Training Results
+| Metric | Value |
+|--------|-------|
+| Min Train Loss | 2.8952 |
+| Min Validation Loss | 3.0656 |
+| Max Hellaswag eval | 0.3085 |
+
+![GPT-2 Implement Baseline](images/gpt-2-implement-baseline.png)
