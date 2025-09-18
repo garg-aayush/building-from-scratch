@@ -438,3 +438,39 @@ Now that training works, we want to speed it up significantly to get my money's 
     - We create a batch of 4 rows × T tokens, shared context tokens across all rows, four different completion options, pad to longest option length, use mask for active tokens, and track correct label (e.g., option 3).
     - We calculate cross-entropy loss for each completion option, select option with lowest average loss (highest probability)
     - You can see the implementation in [hellaswag.py](hellaswag.py)
+
+### Baseline Training Results
+| Metric | Value |
+|--------|-------|
+| Min Train Loss | 2.8952 |
+| Min Validation Loss | 3.0656 |
+| Max Hellaswag eval | 0.3085 |
+
+![GPT-2 Implement Baseline](images/gpt-2-implement-baseline.png)
+
+- Training Duration: 19,073 steps (1 epoch through ~10B tokens of FineWeb-Edu)
+- Loss Performance: 
+  - Training loss (blue) and validation loss (orange) both decreased steadily.
+  - We surpassed the OpenAI GPT-2 124M validation loss baseline (red horizontal line) on our dataset.
+  - Note: This comparison isn't perfectly fair since GPT-2 was trained on different data (WebText vs FineWeb-Edu). However, it gives us a good idea that we are on the right track.
+- HellaSwag Progress: Improved from 25% (random chance) to surpassing the original GPT-2 124M performance.
+- Token Efficiency: We matched GPT-2's performance using only 10B tokens vs GPT-2's 100B tokens (10x more efficient).
+- Andrej's explanation for the improved efficiency:
+    - We identified several possible reasons for our superior token efficiency:
+        - Data Distribution Differences: FineWeb-Edu is English-only and focused on educational content, while GPT-2 trained on multilingual data including math and code. The broader distribution may have "stolen capacity" from GPT-2's performance on our specific benchmark.
+        - Evaluation Contamination Risk: HellaSwag is ~5 years old and portions may have leaked into FineWeb-Edu's training data. However, HuggingFace uses hellaswag as a benchmark for their dataset, thus it is not likely that the data is contaminated.
+        - Data Quality Improvements: Modern datasets like FineWeb-Edu benefit from better practices around deduplication, filtering, and quality control compared to the early WebText dataset used for GPT-2.
+
+### Improvements that can be made
+- Problematic Loss Curve Pattern: We observed concerning periodicity in our loss curves that appears related to data ordering issues. The 10B sample of FineWeb-Edu may not be properly shuffled, and our lazy data loading approach inherits the original ordering without permutation.
+    - Document Shuffling: Randomly permute documents within each shard on every epoch
+    - Shard Permutation: Randomize shard ordering between epochs  
+- Learning Rate: Can potentially be increased 3x from current values, similarly we can also decrease the number of warmup steps.
+- Sequence Length: Could match GPT-3's 2048 tokens (vs our 1024) by changing T=2048 and reducing batch size to B=32 to maintain ~500K tokens per step
+- We can also train for more epochs to get better performance (similar to what Andrej did in his video).
+- Moreover, we should add a way to checkpoint the model and resume training from the last checkpoint if the training is interrupted. This will also allow us to use the checkpoint for more comprehensive evaluation by using the [LM Evaluation Harness](https://github.com/EleutherAI/lm-evaluation-harness).
+- Note, this implementation only covers pre-training. To create a conversational model like ChatGPT, we would need supervised fine-tuning (SFT) on conversational data with user/assistant structure.
+
+### llm.c
+- Andrej also implemented a pure Cuda implementation of GPT-2 in [llm.c](https://github.com/karpathy/llm.c).
+- It is a pure Cuda implementation of GPT-2 that is much faster and more memory efficient than our implementation. In case, you just want to train GPT-2/3 variants and don't want to deal with the complexity of the PyTorch implementation, you can use this implementation.

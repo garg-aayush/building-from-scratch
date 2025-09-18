@@ -418,7 +418,6 @@ def get_lr(step):
     assert 0 <= decay_ratio <= 1
     coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
     return min_lr + coeff * (max_lr - min_lr)
-# update the optimizer to use the same hyperparameters as GPT-3
 optimizer = model.configure_optimizers(weight_decay=0.1, learning_rate=max_lr, device=device_type)
 
 # use torch.compile to further speedup the model
@@ -431,6 +430,8 @@ if ddp:
     # pass ddp_local_rank to the model to ensure the model is moved to the correct device
     model = DDP(model, device_ids=[ddp_local_rank])
 print("Model moved to device successfully")
+# # update the optimizer to use the same hyperparameters as GPT-3
+# raw_model = model.module if ddp else model
 
 # create the encoder
 enc = tiktoken.get_encoding("gpt2")
@@ -547,6 +548,9 @@ for step in range(max_steps):
     for micro_step in range(grad_accum_steps):
         x, y = train_loader.get_batch()
         x, y = x.to(device), y.to(device)
+        if ddp:
+            # only synchronize on the final micro-step and all-reduce the loss_accum across all processes
+            model.require_backward_grad_sync = (micro_step == grad_accum_steps - 1)
         # use bfloat16 for the model forward pass, supported on Ampere and above
         # note since we are using bf16 and not f16, we don't need to use gradient scaler
         # As bf16 has the same range as fp32
@@ -558,9 +562,6 @@ for step in range(max_steps):
         # and we want mean instead of sum
         loss = loss / grad_accum_steps
         loss_accum += loss.detach()
-        if ddp:
-            # only synchronize on the final micro-step and all-reduce the loss_accum across all processes
-            model.require_backward_grad_sync = (micro_step == grad_accum_steps - 1)
         loss.backward()
     if ddp:
         # all-reduce the loss_accum across all processes
