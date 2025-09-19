@@ -25,7 +25,7 @@ import wandb
 # params
 # -------------------------------------------------------------#
 wandb_project = "pre-training" # wandb project name
-wandb_run_name = "gpt2-periodicity-fix" # wandb run name
+wandb_run_name = "gpt2-lr-inc" # wandb run name
 data_root = "/workspace/shards" # data root
 ckpt_dir = "/workspace/ckpt" # checkpoint directory
 eval_interval = 250      # (steps) interval for validation and hellaSwag evaluation
@@ -36,9 +36,9 @@ total_batch = 524288    # 2^19, ~0.5M tokens, matching GPT-3 124M model
 B = 64                 # batch size
 T = 1024                # sequence length
 # optimizer hyperparameters
-max_lr = 6e-4           # maximum learning rate
+max_lr = 1.5e-3           # maximum learning rate
 min_lr = max_lr * 0.1   # minimum learning rate
-warmup_steps = 715      # number of warmup steps, this is from original GPT-3 paper, and is too conservative, we can even go with like 100 steps
+warmup_steps = 300      # number of warmup steps, this is from original GPT-3 paper, and is too conservative, we can even go with like 100 steps
 max_steps = 19073       # total number of steps, FineWeb-Edu 10B tokens (1 epoch training 10B/ 2^19)
 weight_decay = 0.1      # weight decay for optimizer
 betas = (0.9, 0.95)     # betas for optimizer
@@ -59,7 +59,7 @@ max_seq_len = 32            # maximum sequence length
 start_seq = "Hello, I'm a language model," # start sequence
 run_validation = True      # flag for running validation
 run_hellaswag = True      # flag for running hellaswag
-run_gen_samples = True      # flag for running generation samples
+run_gen_samples = False      # flag for running generation samples
 # H100 SXM: 989e12 flops (bf16)
 # H100 PCIe: 756e12 flops (bf16)
 # A100: 312e12 flops (bf16)
