@@ -14,12 +14,11 @@ import torch
 # for ddp training 
 import torch.distributed as dist
 import torch.nn.functional as F
+# for logging
+import wandb
 from hellaswag import iterate_examples, render_example
 from model import GPT, GPTConfig
 from torch.nn.parallel import DistributedDataParallel as DDP
-
-# for logging
-import wandb
 
 # -------------------------------------------------------------#
 # params
