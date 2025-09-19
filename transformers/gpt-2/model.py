@@ -231,3 +231,27 @@ class GPT(nn.Module):
         optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, eps=1e-8, fused=use_fused)
         print(f"Using fused AdamW: {use_fused}")
         return optimizer
+    
+    def get_num_parameters(self, non_embeddings=True):
+        num_params = sum(p.numel() for p in self.parameters())
+        if non_embeddings:
+            # as wte and wpe are shared weights, we need to subtract the number of parameters of wpe
+            num_params -= self.transformer.wpe.weight.numel()
+        return num_params
+
+    def estimate_mfu(self, fwdbwd_per_iter, dt, flops_promised=989e12):
+        """Estimate flops utilization (MFU) in ratio"""
+        # first estimate the number of flops we do per iteration.
+        # see PaLM paper Appendix B as ref: https://arxiv.org/abs/2204.02311
+        
+        # number of params
+        N = self.get_num_parameters()
+        # flops per iteration
+        L, H, Q, T = self.config.n_layer, self.config.n_head, self.config.n_embd//self.config.n_head, self.config.block_size
+        flops_per_token = 6*N + 12*L*H*Q*T
+        flops_per_fwd_bwd = flops_per_token * T
+        flops_per_iter = flops_per_fwd_bwd * fwdbwd_per_iter
+        flops_achieved = flops_per_iter * (1.0/dt)
+        flops_promised = flops_promised
+        mfu = flops_achieved / flops_promised
+        return mfu
