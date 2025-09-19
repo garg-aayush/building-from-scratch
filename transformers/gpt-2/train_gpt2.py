@@ -26,20 +26,20 @@ import wandb
 # -------------------------------------------------------------#
 wandb_project = "pre-training" # wandb project name
 wandb_run_name = "gpt2-baseline" # wandb run name
-data_root = "/home/shards" # data root
-ckpt_dir = "ckpt" # checkpoint directory
-eval_interval = 100      # (steps) interval for validation and hellaSwag evaluation
+data_root = "/workspace/shards" # data root
+ckpt_dir = "/workspace/ckpt" # checkpoint directory
+eval_interval = 250      # (steps) interval for validation and hellaSwag evaluation
 log_interval = 1         # (steps) interval for logging
 grad_norm_clip = 1.0     # global norm gradient clipping
 # data
 total_batch = 524288    # 2^19, ~0.5M tokens, matching GPT-3 124M model
-B = 32                  # batch size
+B = 64                 # batch size
 T = 1024                # sequence length
 # optimizer hyperparameters
 max_lr = 6e-4           # maximum learning rate
 min_lr = max_lr * 0.1   # minimum learning rate
-warmup_steps = 100      # number of warmup steps, this is from original GPT-3 paper, and is too conservative, we can even go with like 100 steps
-max_steps = 400       # total number of steps, FineWeb-Edu 10B tokens (1 epoch training 10B/ 2^19)
+warmup_steps = 715      # number of warmup steps, this is from original GPT-3 paper, and is too conservative, we can even go with like 100 steps
+max_steps = 19073       # total number of steps, FineWeb-Edu 10B tokens (1 epoch training 10B/ 2^19)
 weight_decay = 0.1      # weight decay for optimizer
 betas = (0.9, 0.95)     # betas for optimizer
 # model
@@ -63,7 +63,7 @@ run_gen_samples = True      # flag for running generation samples
 # H100 PCIe: 756e12 flops (bf16)
 # A100: 312e12 flops (bf16)
 # RTX6000 Ada: 364e12 flops (bf16)
-flops_promised = 364e12    # flops (bf16) promised by the gpu
+flops_promised = 989e12    # flops (bf16) promised by the gpu
 # -------------------------------------------------------------#
 # print config keys, cool way to see the config
 config = {k: v for k, v in globals().items() if not k.startswith("__") and isinstance(v, (int, float, str, bool))}
