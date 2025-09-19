@@ -25,7 +25,7 @@ import wandb
 # params
 # -------------------------------------------------------------#
 wandb_project = "pre-training" # wandb project name
-wandb_run_name = "gpt2-baseline" # wandb run name
+wandb_run_name = "gpt2-periodicity-fix" # wandb run name
 data_root = "/workspace/shards" # data root
 ckpt_dir = "/workspace/ckpt" # checkpoint directory
 eval_interval = 250      # (steps) interval for validation and hellaSwag evaluation
@@ -50,6 +50,7 @@ n_head = 12            # number of attention heads
 # system
 device = "cuda"        # device to use, "cuda" or "mps" or "cpu" (DDP only for "cuda")
 seed = 42              # seed for the random number generator
+data_seed = 1337       # seed for the data shuffle
 use_compile = True    # use torch.compile to further speedup the model
 # eval
 val_loss_steps = 20        # number of steps for validation loss
@@ -75,20 +76,25 @@ for k,v in config.items():
 # data loader
 # -------------------------------------------------------------------------#
 class DataLoaderLite:
-    def __init__(self, B, T, process_rank, num_processes, split, data_root='~/data/shards'):
+    def __init__(self, B, T, process_rank, num_processes, split, data_root='shards', seed=42):
         self.B = B
         self.T = T
         self.process_rank = process_rank
         self.num_processes = num_processes
         assert split in ["train", "val"], f"Invalid split: {split}"
+        self.split = split
+        self.rng = np.random.RandomState(seed+seed_offset)
+        self.eot = enc._special_tokens["<|endoftext|>"]  # end of text token
         
         # get the shards filenames
-        shards = [s for s in os.listdir(data_root) if split in s]
+        shards = [s for s in os.listdir(data_root) if self.split in s]
         shards = sorted(shards)
         shards = [os.path.join(data_root, s) for s in shards]
         self.shards = shards
-        assert len(shards) > 0, f"No shards found for split: {split}"
-
+        # shuffle the shards
+        self.rng.shuffle(self.shards)
+        assert len(shards) > 0, f"No shards found for split: {self.split}"
+        
         # load the dataset
         self.cur_shard = 0
         self.tokens = self._load_tokens(self.shards[self.cur_shard])
@@ -112,9 +118,27 @@ class DataLoaderLite:
         return x, y
     
     def _load_tokens(self, filename):
-        np_tensor = np.load(filename)
-        return torch.tensor(np_tensor, dtype=torch.long)
-    
+        # memory mapping for efficiency
+        np_tensor = np.load(filename, mmap_mode='r')
+        # For validation split, return tokens as-is without shuffling
+        if self.split == "val":
+            return torch.tensor(np_tensor, dtype=torch.long)
+        else:
+            # For training split, shuffle documents to reduce temporal patterns
+            t = torch.tensor(np_tensor, dtype=torch.long)
+            # Split the token sequence into individual documents at end-of-text markers
+            doc_breaks = (t == self.eot).nonzero().flatten().tolist()
+            docs, start = [], 0 
+            # Extract each document including its EOT token
+            for end in doc_breaks:
+                docs.append(t[start:end+1])  # include EOT
+                start = end + 1
+            if start < len(t):  # last doc without trailing EOT
+                docs.append(t[start:])
+            # Randomly shuffle the order of documents to break temporal patterns
+            self.rng.shuffle(docs)
+            # Concatenate all shuffled documents back into a single tensor
+            return torch.cat(docs, dim=0)
     def reset(self):
         self.cur_shard = 0
         self.tokens = self._load_tokens(self.shards[self.cur_shard])
@@ -220,13 +244,14 @@ grad_accum_steps = total_batch // (B * T * ddp_world_size)
 print(f"Total desired batch size: {total_batch}")
 print(f"gradient accumulation steps: {grad_accum_steps}")
 
-# create the data loaders
-train_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="train", data_root=data_root)
-val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val", data_root=data_root)
-
 # create the encoder
 print("Creating encoder...")
 enc = tiktoken.get_encoding("gpt2")
+
+# create the data loaders
+train_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="train", data_root=data_root, seed=data_seed)
+val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val", data_root=data_root, seed=data_seed)
+
 
 # initialize the model
 print("Initializing model...")
