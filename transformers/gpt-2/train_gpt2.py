@@ -18,23 +18,28 @@ from hellaswag import iterate_examples, render_example
 from model import GPT, GPTConfig
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+# for logging
+import wandb
+
 # -------------------------------------------------------------#
 # params
 # -------------------------------------------------------------#
-log_dir = "log"          # log directory
-log_filename = "log.txt" # log filename
-eval_interval = 250      # (steps) interval for validation and hellaSwag evaluation
+wandb_project = "pre-training" # wandb project name
+wandb_run_name = "gpt2-baseline" # wandb run name
+data_root = "/home/shards" # data root
+ckpt_dir = "ckpt" # checkpoint directory
+eval_interval = 100      # (steps) interval for validation and hellaSwag evaluation
 log_interval = 1         # (steps) interval for logging
 grad_norm_clip = 1.0     # global norm gradient clipping
 # data
 total_batch = 524288    # 2^19, ~0.5M tokens, matching GPT-3 124M model
-B = 64                  # batch size
+B = 32                  # batch size
 T = 1024                # sequence length
 # optimizer hyperparameters
 max_lr = 6e-4           # maximum learning rate
 min_lr = max_lr * 0.1   # minimum learning rate
-warmup_steps = 715      # number of warmup steps, this is from original GPT-3 paper, and is too conservative, we can even go with like 100 steps
-max_steps = 19073       # total number of steps, FineWeb-Edu 10B tokens (1 epoch training 10B/ 2^19)
+warmup_steps = 100      # number of warmup steps, this is from original GPT-3 paper, and is too conservative, we can even go with like 100 steps
+max_steps = 400       # total number of steps, FineWeb-Edu 10B tokens (1 epoch training 10B/ 2^19)
 weight_decay = 0.1      # weight decay for optimizer
 betas = (0.9, 0.95)     # betas for optimizer
 # model
@@ -51,10 +56,18 @@ val_loss_steps = 20        # number of steps for validation loss
 num_return_sequences = 4    # number of return sequences
 max_seq_len = 32            # maximum sequence length
 start_seq = "Hello, I'm a language model," # start sequence
+run_validation = True      # flag for running validation
+run_hellaswag = True      # flag for running hellaswag
+run_gen_samples = True      # flag for running generation samples
+# H100 SXM: 989e12 flops (bf16)
+# H100 PCIe: 756e12 flops (bf16)
+# A100: 312e12 flops (bf16)
+# RTX6000 Ada: 364e12 flops (bf16)
+flops_promised = 364e12    # flops (bf16) promised by the gpu
 # -------------------------------------------------------------#
 # print config keys, cool way to see the config
-config_keys = {k: v for k, v in globals().items() if not k.startswith("__") and isinstance(v, (int, float, str, bool))}
-for k,v in config_keys.items():
+config = {k: v for k, v in globals().items() if not k.startswith("__") and isinstance(v, (int, float, str, bool))}
+for k,v in config.items():
     print(f"{k:<20}: {v}")
 # -------------------------------------------------------------#
 
@@ -182,6 +195,7 @@ else:
     # vanilla single GPU/CPU/MPS training
     master_process = True
     ddp_rank = 0
+    seed_offset = 0
     ddp_local_rank = 0
     ddp_world_size = 1
 
@@ -193,25 +207,22 @@ if device_type == "cuda":  # Fixed: only set CUDA seed if using CUDA
 # use tf32
 torch.set_float32_matmul_precision("high")
 
-# create log directory
+# create wandb run and ckpt dir
 if master_process:
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, log_filename)
-    with open(log_file, "w") as f:
-        pass
-    print(f"Logging to {log_file}")
+    os.makedirs(ckpt_dir, exist_ok=True)
+    wandb.init(project=wandb_project, name=wandb_run_name, config=config)
+    print(f"Logging to wandb, project: {wandb_project}, run: {wandb_run_name}")
 
 # get a data batch
-if master_process:
-    print("Calculate gradient accumulation steps...")
-    assert total_batch % (B * T * ddp_world_size) == 0, f"Total batch size {total_batch} is not divisible by B*T*WORLD_SIZE={B * T * ddp_world_size}"
-    grad_accum_steps = total_batch // (B * T * ddp_world_size)
-    print(f"Total desired batch size: {total_batch}")
-    print(f"gradient accumulation steps: {grad_accum_steps}")
+print("Calculate gradient accumulation steps...")
+assert total_batch % (B * T * ddp_world_size) == 0, f"Total batch size {total_batch} is not divisible by B*T*WORLD_SIZE={B * T * ddp_world_size}"
+grad_accum_steps = total_batch // (B * T * ddp_world_size)
+print(f"Total desired batch size: {total_batch}")
+print(f"gradient accumulation steps: {grad_accum_steps}")
 
 # create the data loaders
-train_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="train", data_root="/root/shards")
-val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val", data_root="/root/shards")
+train_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="train", data_root=data_root)
+val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val", data_root=data_root)
 
 # create the encoder
 print("Creating encoder...")
@@ -225,7 +236,7 @@ model.to(device)
 
 # setup the optimizer
 print("Setting up optimizer...")
-optimizer = model.configure_optimizers(weight_decay=weight_decay, learning_rate=max_lr, device=device_type)
+optimizer = model.configure_optimizers(weight_decay=weight_decay, learning_rate=max_lr, betas=betas, device=device_type)
 
 # use torch.compile to further speedup the model
 if use_compile:
@@ -236,7 +247,7 @@ print("Moving model to device...")
 if ddp:
     # pass ddp_local_rank to the model to ensure the model is moved to the correct device
     model = DDP(model, device_ids=[ddp_local_rank])
-
+raw_model = model.module if ddp else model
 
 @torch.no_grad()
 def estimate_loss():
@@ -322,29 +333,47 @@ def generate_samples():
         print(f"rank {ddp_rank}, sample {i}: {decoded}")
     model.train()
 
+best_val_loss = 1e9
+running_mfu = -1.0
 for step in range(max_steps):
     t0 = time.time()
     last_step = (step == max_steps - 1)
+    log_dict = {"step": step}
     
     # validation
-    if step % eval_interval == 0 or last_step:
+    if (step % eval_interval == 0 or last_step) and run_validation:
         val_loss = estimate_loss()
         if master_process:
             print(f"validation loss: {val_loss:.4f}")
-            with open(log_file, "a") as f: 
-                f.write(f"{step} val_loss: {val_loss:.4f}\n")
+            log_dict["val/loss"] = val_loss
+
+            # save the best model
+            if (val_loss < best_val_loss or last_step) and step > 0:
+                best_val_loss = val_loss if val_loss < best_val_loss else best_val_loss
+                checkpoint = {
+                    "model": raw_model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "step": step,
+                    "best_val_loss": best_val_loss,
+                    "val_loss": val_loss,
+                    "model_args": model_args,
+                    "config": config
+                }
+                print(f"Saving model at step {step}, val_loss: {val_loss:.4f} -> best_val_loss: {best_val_loss:.4f}")
+                ckpt_name = "final_model.pt" if last_step else "best_model.pt"
+                torch.save(checkpoint, os.path.join(ckpt_dir, ckpt_name))
     
     # hellaswag evaluation
-    if (step % eval_interval == 0 or last_step):
+    if (step % eval_interval == 0 or last_step) and run_hellaswag:
         hella_acc_norm, num_correct_norm, num_total = estimate_hella_acc()
         if master_process:
             print(f"HellaSwag accuracy: {num_correct_norm}/{num_total}={hella_acc_norm:.4f}")
-            with open(log_file, "a") as f:
-                f.write(f"{step} hella_norm: {hella_acc_norm:.4f}\n")
-                
+            log_dict["val/hella_norm"] = hella_acc_norm
+        
     # generate samples from the model (except at step 0)
-    if step % eval_interval == 0 or last_step:
+    if (step % eval_interval == 0 or last_step) and run_gen_samples:
         generate_samples()
+    
         
     # training
     model.train()
@@ -390,10 +419,23 @@ for step in range(max_steps):
     dt = (t1 - t0) * 1000 # convert to ms
     # tokens per second is a better metric than dt because it is independent of the batch size and sequence length
     tokens_per_second = (train_loader.B * train_loader.T) * grad_accum_steps * ddp_world_size / (t1-t0)
-    if step % eval_interval == 0 or last_step:
-        print(f"step: {step:04d}, loss: {loss_accum.item():.4f} | lr: {lr:.4e} | norm: {norm:.4f} | dt: {dt:.2f} ms | tok/s: {tokens_per_second:.2f}")
-        with open(log_file, "a") as f:
-            f.write(f"{step} train_loss: {loss_accum.item():.4f}\n")
+    if master_process and (step % log_interval == 0 or last_step):
+        if step > 5: # let the training loop stabilize
+            mfu = raw_model.estimate_mfu(grad_accum_steps * B, dt/1000, flops_promised)
+            # smooth the mfu (moving average)
+            running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
+        print(f"step: {step:04d}, loss: {loss_accum.item():.4f} | lr: {lr:.4e} | norm: {norm:.4f} | dt: {dt:.2f} ms | tok/s: {tokens_per_second:.2f} | mfu: {running_mfu*100:.2f}%")
+        train_log_dict = {
+            "train/loss": loss_accum.item(), 
+            "train/lr": lr, 
+            "train/norm": norm.item(), 
+            "dt": dt,
+            "mfu": running_mfu,
+            "tok/s": tokens_per_second
+        }
+        # add the train/log_dict to the log_dict
+        log_dict.update(train_log_dict)
+        wandb.log(log_dict)
             
 if ddp:
     dist.destroy_process_group()
