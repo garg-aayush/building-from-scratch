@@ -24,7 +24,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 # params
 # -------------------------------------------------------------#
 wandb_project = "pre-training" # wandb project name
-wandb_run_name = "gpt2-lr-inc" # wandb run name
+wandb_run_name = "gpt2-global-datafix" # wandb run name
 data_root = "/workspace/shards" # data root
 ckpt_dir = "/workspace/ckpt" # checkpoint directory
 eval_interval = 250      # (steps) interval for validation and hellaSwag evaluation
@@ -74,7 +74,88 @@ for k,v in config.items():
 # -------------------------------------------------------------------------#
 # data loader
 # -------------------------------------------------------------------------#
-class DataLoaderLite:
+seed_offset = 0
+class TrainDataLoaderLite:
+    
+    def __init__(self, data_root, T, B, split="train", num_processes=1, process_rank=0, seed=42):
+        
+        self.B = B
+        self.T = T
+        self.process_rank = process_rank
+        self.num_processes = num_processes
+        self.split = split
+        assert split in ["train", "val"], f"Invalid split: {split}"
+        self.rng = np.random.default_rng(seed+seed_offset)
+
+        # get the shards filenames
+        self.shards = [s for s in os.listdir(data_root) if self.split in s]
+        self.shards = sorted(self.shards)
+        self.shards = [os.path.join(data_root, s) for s in self.shards]
+        print(f"{split}: {len(self.shards)} shard(s)")
+
+        # Memory-map shards so they don’t fully load into RAM
+        self.mem = [np.load(f, mmap_mode='r') for f in self.shards]
+        self.shard_lengths = [m.shape[0] for m in self.mem]
+        
+        # Build global window index ---
+        self._build_index()
+        self.ptr = 0
+
+    def _build_index(self):
+        """Build a list of all (shard_id, start_offset) windows."""
+        all_indices = []
+        for sid, L in enumerate(self.shard_lengths):
+            # number of windows in this shard (discard leftover < T+1 tokens)
+            max_windows = (L - (self.T + 1)) // self.T
+            if max_windows <= 0:
+                continue
+            starts = (np.arange(max_windows) * self.T).astype(np.int64)
+            shard_ids = np.full_like(starts, sid, dtype=np.int64)
+            pairs = np.stack([shard_ids, starts], axis=1)
+            all_indices.append(pairs)
+
+        all_indices = np.concatenate(all_indices, axis=0)
+        print(all_indices.shape)
+
+        if self.split == "train":
+            # shuffle and split across ranks (each GPU sees unique slice)
+            self.rng.shuffle(all_indices)
+            self.index = all_indices[self.process_rank::self.num_processes]
+        else:
+            # validation: no shuffle, same across ranks
+            self.index = all_indices
+
+        print(f"{self.split} index size: {len(self.index)} windows")
+
+    def __len__(self):
+        """Number of full batches in the dataset."""
+        return len(self.index) // self.B
+
+    def get_batch(self):
+        """Return one batch of shape (B, T) for x and y."""
+        rows = self.index[self.ptr : self.ptr + self.B]
+        self.ptr += self.B
+
+        xs, ys = [], []
+        for sid, start in rows:
+            # slice (T+1) tokens from shard
+            t = self.mem[sid][start : start + self.T + 1].astype(np.uint16)
+            t = torch.from_numpy(t)
+            xs.append(t[:-1])
+            ys.append(t[1:])
+        x = torch.stack(xs).long()
+        y = torch.stack(ys).long()
+        return x, y
+
+    def reset(self, seed=None):
+        """Reset pointer and reshuffle (train only)."""
+        if self.split == "train":
+            if seed is not None:
+                self.rng = np.random.default_rng(seed+seed_offset)
+            self._build_index()
+        self.ptr = 0
+
+class ValDataLoaderLite:
     def __init__(self, B, T, process_rank, num_processes, split, data_root='shards', seed=42):
         self.B = B
         self.T = T
@@ -248,8 +329,8 @@ print("Creating encoder...")
 enc = tiktoken.get_encoding("gpt2")
 
 # create the data loaders
-train_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="train", data_root=data_root, seed=data_seed)
-val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val", data_root=data_root, seed=data_seed)
+train_loader = TrainDataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="train", data_root=data_root, seed=data_seed)
+val_loader = ValDataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val", data_root=data_root, seed=data_seed)
 
 
 # initialize the model
