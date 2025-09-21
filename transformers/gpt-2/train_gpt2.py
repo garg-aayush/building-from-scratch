@@ -24,7 +24,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 # params
 # -------------------------------------------------------------#
 wandb_project = "pre-training" # wandb project name
-wandb_run_name = "gpt2-rope" # wandb run name
+wandb_run_name = "gpt2-swiglu" # wandb run name
 data_root = "/workspace/shards" # data root
 ckpt_dir = "/workspace/ckpt" # checkpoint directory
 eval_interval = 250      # (steps) interval for validation and hellaSwag evaluation

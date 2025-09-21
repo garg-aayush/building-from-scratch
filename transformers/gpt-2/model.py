@@ -109,18 +109,22 @@ class CausalSelfAttention(nn.Module):
         return y
 
 
-class MLP(nn.Module):
-    def __init__(self, config: GPTConfig):
+# SwiGLU: https://arxiv.org/pdf/2002.05202
+class SwiGLU(nn.Module):
+    def __init__(self, config: GPTConfig, factor: float = 8/3):
         super().__init__()
-        self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd)
-        self.gelu = nn.GELU(approximate="tanh")
-        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd)
+        # Two linear projections (for swiglu)
+        self.c_fc1 = nn.Linear(config.n_embd, int(config.n_embd * factor))
+        self.c_fc2 = nn.Linear(config.n_embd, int(config.n_embd * factor))
+        # Output projection back to input_dim
+        self.c_proj = nn.Linear(int(config.n_embd * factor), config.n_embd)
         self.c_proj.NANOGPT_SCALE_INIT = 1
 
     def forward(self, x):
-        x = self.c_fc(x)
-        x = self.gelu(x)
-        x = self.c_proj(x)
+        # SwiGLU: ((xW1) * swish(xW2)) * W3
+        x_proj = self.c_fc1(x)
+        gate = F.silu(self.c_fc2(x))
+        x = self.c_proj(x_proj * gate)
         return x
 
 
@@ -130,7 +134,7 @@ class Block(nn.Module):
         self.ln_1 = nn.LayerNorm(config.n_embd)
         self.attn = CausalSelfAttention(config)
         self.ln_2 = nn.LayerNorm(config.n_embd)
-        self.mlp = MLP(config)
+        self.mlp = SwiGLU(config)
 
     def forward(self, x):
         # transformer block: reduce-map operation
