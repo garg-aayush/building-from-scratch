@@ -21,6 +21,42 @@ class GPTConfig:
     n_embd: int = 768  # embedding dimension
     n_head: int = 12  # number of attention heads
 
+# RoPE module that rotates query/key feature pairs by position-dependent angles
+class RotaryEmbedding(nn.Module):  
+    def __init__(self, dim, max_seq_len=2048):  
+        super().__init__()
+        # dim: per-head size; max_seq_len: how many positions to precompute
+        assert dim % 2 == 0, f"RotaryEmbedding requires even head_dim, got {dim}"
+        self.dim = dim
+        self.max_seq_len = max_seq_len
+        # inverse frequencies for each pair
+        inv_freq = 1.0 / (10000 ** (torch.arange(0, dim, 2).float() / dim))
+        self.register_buffer("inv_freq", inv_freq)  # keep on device, not trainable
+        # positions [0..max_seq_len-1]
+        t = torch.arange(self.max_seq_len).type_as(self.inv_freq)
+        # outer product → angles per (position, pair)
+        freqs = torch.einsum("i,j->ij", t, self.inv_freq)
+        # duplicate to match two halves of the head dimension
+        emb = torch.cat((freqs, freqs), dim=-1)
+        # cache sin/cos for all positions/pairs, shaped [1,1,T,D]
+        self.register_buffer("cos_cached", emb.cos()[None, None, :, :])
+        self.register_buffer("sin_cached", emb.sin()[None, None, :, :])
+
+    def forward(self, x):
+        # x: [bs, num_heads, seq_len, head_dim];
+        seq_len = x.shape[2]
+        cos = self.cos_cached[:, :, :seq_len, :].to(dtype=x.dtype, device=x.device)
+        sin = self.sin_cached[:, :, :seq_len, :].to(dtype=x.dtype, device=x.device)
+
+        def rotate_half(x_):
+            # rotate by swapping halves and negating the second
+            x1 = x_[..., : self.dim // 2]
+            x2 = x_[..., self.dim // 2 :]
+            # [-x2, x1]: a 90-degree rotation in each 2D feature pair
+            return torch.cat((-x2, x1), dim=-1)
+        
+        # standard RoPE: apply rotation with per-position cos/sin
+        return x * cos + rotate_half(x) * sin
 
 class CausalSelfAttention(nn.Module):
     def __init__(self, config):
@@ -38,6 +74,8 @@ class CausalSelfAttention(nn.Module):
         self.n_embd = config.n_embd
         # causal mask to ensure that attention is only applied to the left in the input sequence
         self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
+        self.rope = RotaryEmbedding(dim=self.n_embd // self.n_head, max_seq_len=config.block_size)
+
 
     def forward(self, x):
         B, T, C = x.size()  # batch size, sequence length, n_embd
@@ -49,6 +87,10 @@ class CausalSelfAttention(nn.Module):
         q = rearrange(q, "B T (nh hs) -> B nh T hs", nh=self.n_head)  # (B, nh, T, hs)
         v = rearrange(v, "B T (nh hs) -> B nh T hs", nh=self.n_head)  # (B, nh, T, hs)
 
+        # apply rope
+        q = self.rope(q)
+        k = self.rope(k)
+        
         # # attention: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         # att = einsum(q, k, "B nh T1 hs, B nh T2 hs -> B nh T1 T2") * (
         #     1.0 / math.sqrt(k.size(-1))
@@ -67,18 +109,22 @@ class CausalSelfAttention(nn.Module):
         return y
 
 
-class MLP(nn.Module):
-    def __init__(self, config: GPTConfig):
+# SwiGLU: https://arxiv.org/pdf/2002.05202
+class SwiGLU(nn.Module):
+    def __init__(self, config: GPTConfig, factor: float = 8/3):
         super().__init__()
-        self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd)
-        self.gelu = nn.GELU(approximate="tanh")
-        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd)
+        # Two linear projections (for swiglu)
+        self.c_fc1 = nn.Linear(config.n_embd, int(config.n_embd * factor))
+        self.c_fc2 = nn.Linear(config.n_embd, int(config.n_embd * factor))
+        # Output projection back to input_dim
+        self.c_proj = nn.Linear(int(config.n_embd * factor), config.n_embd)
         self.c_proj.NANOGPT_SCALE_INIT = 1
 
     def forward(self, x):
-        x = self.c_fc(x)
-        x = self.gelu(x)
-        x = self.c_proj(x)
+        # SwiGLU: ((xW1) * swish(xW2)) * W3
+        x_proj = self.c_fc1(x)
+        gate = F.silu(self.c_fc2(x))
+        x = self.c_proj(x_proj * gate)
         return x
 
 
@@ -88,7 +134,7 @@ class Block(nn.Module):
         self.ln_1 = nn.LayerNorm(config.n_embd)
         self.attn = CausalSelfAttention(config)
         self.ln_2 = nn.LayerNorm(config.n_embd)
-        self.mlp = MLP(config)
+        self.mlp = SwiGLU(config)
 
     def forward(self, x):
         # transformer block: reduce-map operation
@@ -107,7 +153,6 @@ class GPT(nn.Module):
         self.transformer = nn.ModuleDict(
             dict(
                 wte=nn.Embedding(config.vocab_size, config.n_embd),
-                wpe=nn.Embedding(config.block_size, config.n_embd),
                 h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
                 ln_f=nn.LayerNorm(config.n_embd),
             )
@@ -140,10 +185,8 @@ class GPT(nn.Module):
         B, T = idx.size()
         assert T <= self.config.block_size, f"Cannot forward sequence of length {T}, block size is only {self.config.block_size}"
         # forward the tokens and position embeddings
-        pos = torch.arange(0, T, dtype=torch.long, device=idx.device)  # shape (T)
-        pos_emb = self.transformer.wpe(pos)  # position embeddings (T, n_embd)
         tok_emb = self.transformer.wte(idx)  # token embeddings (B, T, n_embd)
-        x = pos_emb + tok_emb
+        x = tok_emb
         # forward pass through the transformer
         for block in self.transformer.h:
             x = block(x)
@@ -235,8 +278,8 @@ class GPT(nn.Module):
     def get_num_parameters(self, non_embeddings=True):
         num_params = sum(p.numel() for p in self.parameters())
         if non_embeddings:
-            # as wte and wpe are shared weights, we need to subtract the number of parameters of wpe
-            num_params -= self.transformer.wpe.weight.numel()
+            # as wte are shared with lm_head, we can subtract them from the total
+            num_params -= self.transformer.wte.weight.numel()
         return num_params
 
     def estimate_mfu(self, fwdbwd_per_iter, dt, flops_promised=989e12):
