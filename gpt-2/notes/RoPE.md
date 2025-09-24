@@ -20,9 +20,10 @@ Transformers don’t know token order by default (they are position invariant). 
 
 * **Idea:** give each position $m$ its own vector $p_m$ and **add** it to the token embedding $x_m$:
 
-  $$
-  \tilde{x}_m = x_m + p_m.
-  $$
+$$
+\tilde{x}_m = x_m + p_m
+$$
+
 * They can be either learned or fixed, as in the case of sine-cosine embeddings from the original Transformer paper.
 * **Pros:** trivial to implement; works well; cache-friendly at inference.
 * **Cons:** Poor extrapolation to sequences longer than those seen during training. It doesn't inherently model the relative positions or pairwise distances between tokens, as each position is treated independently.
@@ -31,9 +32,9 @@ Transformers don’t know token order by default (they are position invariant). 
 
 * **Idea:** modify the key vector with a bias $a_{\Delta}$ that depends on the relative distance $\Delta = n-m$.
 * the formula for the attention score is given by:
-  $$
-  \mathrm{score}(m,n) = \frac{\langle Q_m, K_n + a_{\Delta}\rangle }{\sqrt{d_{\text{head}}}}
-  $$
+$$
+\text{score}(m,n) = \frac{\langle Q_m, K_n + a_{\Delta}\rangle }{\sqrt{d_{\text{head}}}}
+$$
 * **Pros:** The model “feels” how far tokens are, as pairwise distance information is added to the attention score.
 * **Cons:** Can be more complex to implement and may not be as cache-friendly during inference. The relative positional information needs to be incorporated at each attention calculation, which can slow down inference for long sequences.
 
@@ -53,25 +54,25 @@ Transformers don’t know token order by default (they are position invariant). 
 
 ## Mathematical formulation (the essentials)
 * Let $Q_m, K_n \in \mathbb{R}^{d_{\text{head}}}$ be per-token, per-head projections. Define $\tilde{Q}_m = R_m Q_m$ and $\tilde{K}_n = R_n K_n$, where $R_m$ is the block-diagonal rotation built from the blocks above. Attention scores per head:
+
 $$
-\mathrm{score}(m,n) = \frac{\langle \tilde{Q}_m, \tilde{K}_n\rangle}{\sqrt{d_{\text{head}}}}
-= \frac{\langle Q_m, R_{n-m} K_n\rangle}{\sqrt{d_{\text{head}}}}.
+\text{score}(m,n) = \frac{\langle \tilde{Q}_m, \tilde{K}_n\rangle}{\sqrt{d_{\text{head}}}} = \frac{\langle Q_m, R_{n-m} K_n\rangle}{\sqrt{d_{\text{head}}}}
 $$
 * Key point: the inner product depends on **$n-m$** (relative offset), not just $m$ or $n$.
 * **Rotation blocks and frequencies**
   * Split a head of size $d_{\text{head}}$ into $d_{\text{head}}/2$ two-dimensional blocks. For block $i$:
-    $$
-    \theta_{m,i} = m\cdot \omega_i,\qquad 
-    \omega_i = b^{-2i/d_{\text{head}}}
-    $$
+
+$$
+\theta_{m,i} = m\cdot \omega_i, \quad \omega_i = b^{-2i/d_{\text{head}}}
+$$
   * with base $b$ (commonly $10,000$). Lower-index blocks rotate **faster**, higher-index **slower**. Per block:
 
-    $$
-    R_{\theta_{m,i}}=\begin{bmatrix}
-    \cos\theta_{m,i} & -\sin\theta_{m,i}\\
-    \sin\theta_{m,i} & \phantom{-}\cos\theta_{m,i}
-    \end{bmatrix}.
-    $$
+$$
+R_{\theta_{m,i}}=\begin{bmatrix}
+\cos\theta_{m,i} & -\sin\theta_{m,i}\\
+\sin\theta_{m,i} & \cos\theta_{m,i}
+\end{bmatrix}
+$$
 
 * It's applied to **Q and K only** (never V). RoPE only rotates the query and key vectors, not the value vectors. The rotation is **frequency-scaled** across dimensions (fast rotations in some dims, slow in others).
 
