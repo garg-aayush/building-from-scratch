@@ -6,33 +6,29 @@
 ## Introduction
 - In this video, we reproduce the GPT-2 model, specifically the 124M parameter version.
 - OpenAI released GPT-2 in 2019, along with a blog post, [research paper](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf), and the original [TensorFlow code](https://github.com/openai/gpt-2) on GitHub.
-- GPT-2 isn’t a single model but a *mini-series* of models of different sizes. The smallest has **124M** parameters, and the largest has **1.5B**. The reason for these variants is so researchers can analyze scaling laws—how model performance on tasks like translation, summarization, and Q\&A improves with size.
-<img src="images/gpt-2-sizes.png" alt="gpt-2 sizes" width="400">
+- GPT-2 isn't a single model but a *mini-series* of models of different sizes. The smallest has **124M** parameters, and the largest has **1.5B**. The reason for these variants is so researchers can analyze scaling laws—how model performance on tasks like translation, summarization, and Q\&A improves with size.
+<img src="../images/gpt-2-sizes.png" alt="gpt-2 sizes" width="400">
 - GPT-2 (124M):
     * It has 12 Transformer layers.
     * Each layer has a hidden size of 768.
 
 - If we reproduce this correctly, by the end of training we should achieve validation losses similar to the original model (good at next-token prediction on unseen validation data).
 
-- Note, GPT-2 paper omits training details, so we’ll also reference the GPT-3 paper: [Language Models are Few-Shot Learners](https://arxiv.org/abs/2005.14165), which is more concrete about hyperparameters and optimizers.
+- Note, GPT-2 paper omits training details, so we'll also reference the GPT-3 paper: [Language Models are Few-Shot Learners](https://arxiv.org/abs/2005.14165), which is more concrete about hyperparameters and optimizers.
 
-
----
 
 ## Loading the Original GPT-2 (Huggingface version)
 
-- The original GPT-2 implementation was in TensorFlow, but we’ll use Hugging Face’s PyTorch implementation, which is easier to work with. 
+- The original GPT-2 implementation was in TensorFlow, but we'll use Hugging Face's PyTorch implementation, which is easier to work with. 
 - Using Hugging Face, `gpt2` corresponds to the 124M model, while larger ones use `gpt2-medium`, `gpt2-large`, and `gpt2-xl`.
 - GPT-2's vocabulary has 50,257 tokens, each mapped to a 768-dimensional embedding vector. It uses learned positional embeddings of size: 768.
     - Unlike the original Transformer paper where sinusoidal embeddings were fixed, GPT-2 trains these parameters from scratch and they converge to similar patterns (sine-cosine patterns)
     - Here channels show noisy curves, suggesting the model wasn't fully trained to convergence. However, 
 - Please see the [load-hf-gpt2.ipynb](load-hf-gpt2.ipynb) for more details.
 
----
-
 ## Building GPT-2 model class
 
-- Instead of relying on Hugging Face’s \~2000 lines of code, we’ll write a minimal implementation (\~100 lines) with the same module/parameter structure so we can import GPT-2 weights. 
+- Instead of relying on Hugging Face's ~2000 lines of code, we'll write a minimal implementation (~100 lines) with the same module/parameter structure so we can import GPT-2 weights. 
 - Key architectural points difference from original _Attention_ paper :
     * Decoder-only Transformer (no encoder, no cross-attention).
     * LayerNorms moved before Attention/MLP (pre-norm).
@@ -47,8 +43,6 @@
         - The GELU always contributes a local gradient and so there's always going to be a change always going to be an adaptation and sort of smoothing it out ends up empirically working better in practice
 - Multi-head attention is implemented with tensor reshaping (4D-Tensor) for efficient parallel computation.
 
----
-
 ## Forward Pass & Sampling
 
 - The forward pass takes input token indices (B,T) and outputs logits (B,T,vocab_size). Applying softmax gives next-token probabilities. This is the T+1 logits.
@@ -62,8 +56,6 @@
     
 - The implementation generates coherent text, though Hugging Face’s pipeline has slight differences due to additional sampling heuristics.
 
----
-
 ## Dataset Choice: Tiny Shakespeare
 
 - For debugging and quick iteration, we don’t start with a huge dataset. Instead, we use the **Tiny Shakespeare dataset**:
@@ -73,7 +65,6 @@
 - Here,
     * **Inputs (X):** the current sequence of tokens.
     * **Targets (Y):** the same sequence shifted left by one position.
----
 
 ## Loss function: cross-entropy loss
 
@@ -83,9 +74,9 @@
     * Cross-entropy flattens these and computes how well the predicted distribution matches the actual next token.
 
 - At initialization, the model’s predictions are close to uniform across the 50,257 tokens.
-    * Expected loss at this stage = `-ln(1/vocab_size)` ≈ **10.8**. This is the loss we expect when the model is making random predictions. This shows the model is not favoring any one token over the others. The probability of each token is fairly diffused.
+    * Expected loss at this stage = `-ln(1/vocab_size)` \( \approx \) **10.8**. This is the loss we expect when the model is making random predictions. This shows the model is not favoring any one token over the others. The probability of each token is fairly diffused.
     * If we see a loss near this, we know our pipeline is wired correctly. 
----
+
 
 ## Optimize on single set of batch
 - We train using **AdamW**, a variant of the Adam optimizer that fixes weight decay behavior:
@@ -93,7 +84,7 @@
 - Before training on the whole dataset, we first **train repeatedly on one tiny batch** as a sanity check.
     * If the model can drive loss close to zero, it means our implementation of forward/backward/optimizer is correct. This shows the model is learning to overfit the small batch, which is a standard sanity check in deep learning.
     * If it fails to overfit, there's a bug in the pipeline.
----
+
 
 ## Minimal dataloader
 Next I implement a minimal **data loader**:
@@ -103,10 +94,10 @@ Next I implement a minimal **data loader**:
     * Advance position by `B*T` tokens
     * Wrap back to the start when past the end of dataset
 - Running only 50 steps shows loss dropping from ~11 to ~6.6:
-    * This is mostly from learning that many vocab entries (unicodes) never occur (driving their logits down). 
+    * This is mostly from learning that many vocab entries (Unicodes) never occur (driving their logits down). 
     * Plus some early learning signal
     * Loss won't reach zero without training for full epochs
----
+
 
 ## Fix the bug relative to GPT-2
 
@@ -116,7 +107,7 @@ There's a subtle **bug** relative to GPT-2:
 - Tying has two benefits:
     * (1) It enforces that token similarity is consistent between embedding space and output distribution
     * (2) It saves parameters—here `768 × 50257 ≈ 40M` weights, \~30% of the 124M model
----
+
 
 ## Initialization Matching GPT-2
 
@@ -130,7 +121,7 @@ There's a subtle **bug** relative to GPT-2:
     * Scale certain residual-branch weights by `1/√N`, where `N` = number of residual additions along the depth
     * Each block has 2 residual additions (attention + MLP), so `N = 2 * n_layer`
     * **Intuition:** The residual stream repeatedly does `x ← x + contribution`. Without scaling, variance of `x` grows like `sqrt(N)`. Scaling by `1/sqrt(N)` keeps forward activations controlled.
----
+
 
 ## Section 2: Let's make the training fast
 Now that training works, we want to speed it up significantly to get my money's worth from the hardware. 
@@ -162,7 +153,7 @@ Now that training works, we want to speed it up significantly to get my money's 
         * Memory bandwidth is precious - many deep learning workloads are memory-bound
         * Tensor cores often sit idle waiting for data. Even well-tuned applications might only achieve ~60% utilization
         * Reducing precision shrinks activations and weights, allowing more data in same capacity and faster movement
----
+
 
 ### Performance Timing Setup
 - Set up an iteration timer around the optimization loop. Make sure to use `torch.cuda.synchronize()` to ensure GPU finishes before timing
@@ -170,7 +161,7 @@ Now that training works, we want to speed it up significantly to get my money's 
     - If you get out-of-memory: reduce batch size (16 → 8 → 4…)
     - Aim to max out the largest power-of-two  batch size that fits. "Nice" numbers: 8, 16, 24, 32, 48, avoid awkward sizes like 17
 - With FP32 baseline (A6000 Ada): GPU is using ~35 GB, toks/s: ~21.1K, dt: ~790ms 
----
+
 
 
 ### Using Tensor Cores (TF32) for Matrix multiplications 
@@ -198,11 +189,11 @@ Now that training works, we want to speed it up significantly to get my money's 
     - Enable tensor cores with TF32 precision in PyTorch with a single line controlling matmul precision. **Always try to use it**. You get great speedup with almost no code changes.
     - The gap between promised and actual speedup using TF32 varies because workloads are still memory-bound. Even though tensor cores make matrix multiplies faster with TF32, you are still moving FP32 values through memory between operations
     - With TF32 `high` (A6000 Ada): GPU is using ~35 GB, toks/s: ~30.8K, dt: ~530ms 
----
+
 
 ### Mixed Precision Training with BF16
 
-<img src="images/different-precisions.png" alt="bf16 vs fp16" style="max-width: 500px;">
+<img src="../images/different-precisions.png" alt="bf16 vs fp16" style="max-width: 500px;">
 
 - BF16 vs FP16 Precision Format:
     - BF16 (BrainFloat 16) keeps FP32's sign and exponent bits but truncates the mantissa further (sign bit: 1, exponent bit: 8, mantissa bit: 7)
@@ -218,7 +209,7 @@ Now that training works, we want to speed it up significantly to get my money's 
     - PyTorch intelligently selects which operations run in lower precision. Usually, matrix multiplications typically run in BF16 for speed. Numerically sensitive operations (softmax, layer norms, losses) stay in FP32 for accuracy
 - With BF16 autocast (A6000 Ada): GPU VRAM: ~33.8 GB, toks/s: ~38.6K, dt: ~423ms (improvement over TF32)
     - This comes at the cost of slightly less numeric precision for better performance. However, the precision loss can be offset by training for longer if needed
----
+
 
 ### Using `torch.compile`
 - Graph Compilation for Neural Networks:
@@ -231,12 +222,12 @@ Now that training works, we want to speed it up significantly to get my money's 
 
 - GPU Memory Hierarchy and Performance Bottlenecks:
     <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
-    <img src="images/GPU-memory-1.png" alt="GPU Memory Hierarchy" style="max-width: 300px; height: auto;">
-    <img src="images/GPU-memory-2.png" alt="GPU Memory Performance" style="max-width: 300px; height: auto;">
+    <img src="../images/GPU-memory-1.png" alt="GPU Memory Hierarchy" style="max-width: 300px; height: auto;">
+    <img src="../images/GPU-memory-2.png" alt="GPU Memory Performance" style="max-width: 300px; height: auto;">
     </div>
     
     <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
-    <img src="images/GPU-memory-3.webp" alt="GPU Memory Architecture" style="max-width: 600px; height: auto;">
+    <img src="../images/GPU-memory-3.webp" alt="GPU Memory Architecture" style="max-width: 600px; height: auto;">
     </div>
 
     - High Bandwidth Memory (HBM):
@@ -250,7 +241,7 @@ Now that training works, we want to speed it up significantly to get my money's 
     - Performance Bottlenecks:
         - Mostly deep learning operations are limited by how fast data can move between HBM and compute units, not by computational throughput. Tensor cores can sit idle waiting for data from HBM, leading to poor utilization (often ~60% even in well-tuned applications)
         - This is where torch.compile comes in.
----
+
 
 ### FlashAttention: Memory-Efficient Attention
 
@@ -261,7 +252,7 @@ Now that training works, we want to speed it up significantly to get my money's 
     - Although it performs more FLOPs on paper, it drastically reduces expensive HBM reads/writes, making it substantially faster overall
     - FlashAttention is implemented as a kernel fusion operation. It uses an [online softmax](https://arxiv.org/abs/1805.02867) trick that computes attention scores in small blocks/tiles. "Online softmax" is a technique that computes the softmax in an online manner, without having to store all the inputs in memory simultaneously using intermediate variables.
 - With `FlashAttention` (A6000 Ada): GPU VRAM: ~13.1 GB, toks/s: ~104.5K, dt: ~155ms
----
+
 
 ### Using "nice" numbers
 - Choosing "nice" numbers (powers of 2) is crucial for CUDA kernel efficiency
@@ -280,13 +271,13 @@ Now that training works, we want to speed it up significantly to get my money's 
 
 - We are now shifting focus from GPU utilization optimizations to algorithmic changes and training optimization strategies
 - GPT-2 paper is vague on optimization details, so we will reference the GPT-3 paper for more concrete hyperparameters and algo-changes. Moreover, GPT-2 paper doesn't release the weights and code, just the model architecture and inference code.
-- Architectureally, GPT-2 and GPT-3 are very similar with minor differences:
+- Architecturally, GPT-2 and GPT-3 are very similar with minor differences:
     - Context length increased from 1024 → 2048 tokens
     - Some minor Transformer hyperparameter adjustments
     - GPT-3 was trained much longer on a larger dataset with more thorough evaluation
     - GPT-3's flagship model has 175B parameters vs GPT-2's largest at 1.6B
 - We will copy GPT-3's training settings wherever possible to ensure robust optimization
----
+
 
 ### AdamW and Gradient Clipping
 - We configure AdamW with specific hyperparameters that differ from PyTorch defaults as per GPT-3 paper recommendations with beta1=0.9, beta2=0.95 and epsilon=1e-8 (default is beta1=0.9 and beta2=0.999 and epsilon=1e-8)
@@ -294,7 +285,7 @@ Now that training works, we want to speed it up significantly to get my money's 
   - This prevents catastrophic gradient explosions from rare, problematic batches that could destabilize training
   - Clipping acts as a safety mechanism - when gradients become too large, they're scaled down proportionally. 
   - It is a good idea to monitor the gradient norm at each training step for diagnostics. If norm is increasing, it can indicate transient training instability.
----
+
 
 ### Cosine Decay Learning Rate Schedule with Warmup
 - We implement a cosine decay learning-rate schedule with warmup rather than using a fixed learning rate throughout training as per GPT-3 paper recommendations with max_lr=6e-4 and min_lr=10% of max_lr (default PyTorch optimizers use fixed learning rates)
@@ -370,7 +361,7 @@ Now that training works, we want to speed it up significantly to get my money's 
         - Without this flag: GPUs try to communicate directly with each other through high-speed interconnects (NVLink, PCIe, etc.)
         - With this flag: GPU communication is routed through the CPU/system memory as an intermediary
     - Also, I dont see the full throughput of the GPUs when using DDP. I think it is because of the communication overhead between GPUs.
----
+
 
 
 ### Training Dataset
@@ -405,7 +396,7 @@ Now that training works, we want to speed it up significantly to get my money's 
     - Per-step tokens: 2e19  (~0.5M) tokens
     - Target: ~10B tokens total → 10,000,000,000 / 524,288 ≈ 19,073 steps (this is from original GPT-3 paper, and is too conservative, we can even go with like 100 steps)
     - Warmup: 375M tokens (per GPT-3) → 375,000,000 / 524,288 ≈ 715 warmup steps (this is from original GPT-3 paper, and is too conservative, we can even go with like 100 steps)
----
+
 
 ### Validation and Generation Steps
 - We implemented validation evaluation and text generation to monitor training progress.
@@ -414,7 +405,7 @@ Now that training works, we want to speed it up significantly to get my money's 
 - Note, we created a separate PyTorch generator object for sampling to avoid affecting the training RNG state
     - Each rank gets a different seed for the sampling generator
     - Pass the generator object to `multinomial()` for controlled random sampling
----
+
 
 ### HellaSwag Evaluation
 
@@ -441,12 +432,12 @@ Now that training works, we want to speed it up significantly to get my money's 
 
 ### Baseline Training Results
 | Metric | Value |
-|--------|-------|
+|--|-|
 | Min Train Loss | 2.8952 |
 | Min Validation Loss | 3.0656 |
 | Max Hellaswag eval | 0.3085 |
 
-![GPT-2 Implement Baseline](images/gpt-2-implement-baseline.png)
+![GPT-2 Implement Baseline](../images/gpt-2-implement-baseline.png)
 
 - Training Duration: 19,073 steps (1 epoch through ~10B tokens of FineWeb-Edu)
 - Loss Performance: 
