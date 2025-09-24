@@ -20,30 +20,6 @@ This implementation follows a systematic approach where each architectural compo
 - All experiments were trained on the [Tiny Shakespeare](https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt) dataset (~1.1M characters)
 - **You might not need any GPU to run the code. I have a macbook m3 (36GB), I was able to train all the versions on it.**
 
-## Development Notebooks
-
-The implementation process is documented through interactive Jupyter notebooks that explore each component:
-
-### `bigram-dev.ipynb`
-Interactive development of the baseline bigram model. Covers:
-- Data loading and preprocessing
-- Character-level tokenization
-- Simple embedding-based prediction
-- Training loop and text generation
-
-### `self-attention-dev.ipynb`  
-Deep dive into the self-attention mechanism with mathematical foundations:
-- Mathematical trick for efficient attention computation
-- Causal masking implementation
-- Comparison of naive vs. efficient implementations
-- Visualization of attention patterns
-
-### `layer-norm-dev.ipynb`
-Comparison between batch normalization and layer normalization:
-- Implementation differences between batch and layer norm
-- Why layer norm is preferred for sequence models
-- Pre-norm vs. post-norm architectural choices
-
 ## File Structure
 
 ```
