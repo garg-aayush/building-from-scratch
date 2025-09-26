@@ -148,3 +148,81 @@
     - We continue this process, one merge at a time, until there are no more mergeable pairs in the sequence according to our vocabulary.
 - Note, the implementation needs to handle short sequences (fewer than two tokens) where no merges are possible.
 - A key property to check is round-trip consistency. For any given text, `decode(encode(text))` should return the original text. This confirms our implementation is working correctly. The reverse is not necessarily true, as not all token sequences are valid.
+
+## Forced splits using the regex patterns (GPT series)
+- A naive BPE implementation might merge words with punctuation (e.g., creating a single token for `"dog."`, another for `"dog?"`, etc). It is not the best use of the vocabulary. This is suboptimal because it mixes semantics with formatting.
+- To prevent this, the GPT-2 tokenizer introduces a pre-processing step. Before BPE is applied, the text is first split into chunks using a complex regular expression pattern. 
+- The final token sequence is the concatenation of the results from each chunk. This effectively creates "forced splits" and prevents merges across different categories (e.g., a letter will never merge with a punctuation mark from an adjacent chunk). The whitespace handling is also very subtle, designed to keep leading spaces attached to words.
+- Note: OpenAI never released the training code for the GPT-2 tokenizer, only the inference code. We can observe that there are likely additional undocumented rules (e.g., spaces are never merged, even when the regex would allow it). Thus, the training process i not just Chunking followed by BPE.
+
+### GPT-2 Tokenizer Regex Pattern
+```python
+r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+```
+- It pre-split raw text into chunks **before** BPE so merges never cross category boundaries (letters vs numbers vs punctuation vs whitespace). Final tokens = BPE applied **inside each chunk** then concatenated. 
+- Contractions:
+    ```
+    's | 't | 're | 've | 'm | 'll | 'd
+    ```
+    - It matches frequent English clitics right after a word: `it's`, `we're`, `I'm`, `you'll`, etc.
+    - This ensures that these tiny morphemes are their **own chunks** so BPE learns/reuses them across contexts instead of absorbing them inconsistently into words/punctuation.
+    - Note, only ASCII `'` + lowercase are matched
+- Letters with optional leading space
+    ```
+     ?\p{L}+
+    ```
+    - It matches one optional leading space + one or more **letters** (Unicode).
+    - This keeps words in a letter-only bucket, and deliberately glue a single leading space to the word so `" hello"` is a unit. That encourages stable `"␠word"` merges and keeps inter-word spacing regular. 
+- Numbers with optional leading space
+    ```
+     ?\p{N}+
+    ```
+    - It matches one optional leading space + one or more **digits/numeric** characters (Unicode).
+    - This prevents alphanumeric blends from merging across the letter/number boundary (`"foo123"` → `"foo" | "123"`). This avoids polluting the vocab with accidental word+number tokens.
+- Other (non-space, non-letter, non-number) with optional leading space
+    ```
+     ?[^\s\p{L}\p{N}]+
+    ```
+    - It matches one optional leading space + one or more **punctuation/symbols/emoji** bytes.
+- Whitespace (all but the last char in a run)
+    ```
+    \s+(?!\S)
+    ```
+    - It matches any remaining whitespace (e.g., string-end).
+    - This ensures nothing falls through; leftover trailing spaces become their own chunks. (Empirically, spaces weren’t merged in the learned vocab; likely an additional rule beyond this regex). 
+
+- Whitespace (catch-all)
+   ```
+   \s+
+   ```
+   - It matches any remaining whitespace (e.g., string-end).
+
+## tiktoken
+- [tiktoken](https://github.com/openai/tiktoken) is OpenAI's open-source library for fast BPE tokenization. It's important to note that this is for *inference* only; you cannot use it to train a new tokenizer.
+- It exposes different tokenizers, including GPT-2's and GPT-4's (`cl100k_base`). We can see key differences, such as GPT-4's more efficient merging of whitespace characters.
+- The pre-tokenization regex pattern used to force splits was updated for GPT-4. We can inspect these patterns in the `tiktoken` library source files. 
+    - GPT-2 regex pattern: 
+        ```python
+        r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}++| ?\p{N}++| ?[^\s\p{L}\p{N}]++|\s++$|\s+(?!\S)|\s"""
+        ```
+    - GPT-4 regex pattern:
+        ```python
+        r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}++|\p{N}{1,3}+| ?[^\s\p{L}\p{N}]++[\r\n]*+|\s++$|\s*[\r\n]|\s+(?!\S)|\s"""
+        ```
+- Key changes include:
+    - Fixes the issue where contractions were treated differently based on capitalization.
+    - The new pattern only allows numbers of up to three digits to be merged, preventing the creation of excessively long number tokens.
+    - The full rationale for these changes is not publicly documented by OpenAI.
+- The core GPT-2's [encoder.py](https://github.com/openai/gpt-2/blob/master/src/encoder.py) BPE logic in their file is algorithmically identical to the greedy merging loop implemented in the notebook.
+
+## Special Tokens
+- In addition to the tokens generated by BPE, we can add "special tokens" to our vocabulary. These are used to signal structure or metadata to the LLM, like the end of a document.
+- GPT-2's vocabulary has 50,257 tokens. This comes from 256 base byte tokens, 50,000 learned merges, and **one special token**: `<|endoftext|>`. This token is used to separate documents in the training data, signaling to the model where one piece of content ends and another begins. The model must learn this from data.
+- Special tokens are handled *outside* the normal BPE process. The tokenizer has special-case logic (e.g., in `tiktoken`) that looks for these exact strings and replaces them with their assigned ID. They are not generated from byte merges.
+- Special tokens are essential for fine-tuning, especially for creating chat models. Tokens like `<|im_start|>` and `<|im_end|>` are used to delimit messages between a user and an assistant, providing a clear structure for conversations.
+- The GPT-4 tokenizer expanded the set of special tokens to include ones for tasks like "fill in the middle" (FIM), which are useful for code completion and other specific tasks. You can see them in the [tiktoken](https://github.com/openai/tiktoken/blob/main/tiktoken_ext/openai_public.py) library source files.
+- We can extend an existing tokenizer with our own custom special tokens. For example, see the [tiktoken example](https://github.com/openai/tiktoken/tree/main?tab=readme-ov-file#extending-tiktoken). 
+- However, if we do this, it also requires "model surgery" especially if we are doing fine-tuning:
+    1.  The token embedding matrix in the Transformer must be extended by adding a new row for each new token.
+    2.  The final output projection layer (LM head) must also be extended to predict the new tokens.
+    3.  These new weights are typically initialized randomly and then fine-tuned so the model learns their meaning.
