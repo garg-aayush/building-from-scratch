@@ -74,3 +74,77 @@
     - [A programmer's intro to Unicode](https://www.reedbeta.com/blog/programmers-intro-to-unicode/)
     - [UTF-8 Everywhere](https://utf8everywhere.org/)
 - Note, we would love to get rid of tokenization entirely and just feed raw byte streams directly into LLMs. There are papers like [MEGABYTE](https://arxiv.org/abs/2305.07185) that are exploring this. This "tokenization-free" approach requires modifying the standard Transformer architecture .While promising, these type of methods are not yet proven at a large enough scale or widely adopted in production models.
+
+## Byte Pair Encoding (BPE)
+- Byte Pair Encoding (BPE) is an iterative data compression algorithm. 
+- Here's a simple example of BPE:
+  We start with a base vocabulary (e.g., the 256 bytes from our UTF-8 stream).
+  Suppose the data to be encoded is `aaabdaaabac`.
+  - **Initial**: 11 tokens, vocab size 4 (a, b, c, d)
+  1. The byte pair "aa" occurs most often, so we replace it with "Z".
+     - **Result**: `ZabdZabac` (9 tokens, vocab size 5)
+     - **Table**: `Z = aa`
+  2. Next, the pair "ab" is most frequent, so we replace it with "Y".
+     - **Result**: `ZYdZYac` (7 tokens, vocab size 6)
+     - **Table**: `Y = ab`, `Z = aa`
+  3. We could continue, replacing "ZY" with "X".
+     - **Result**: `XdXac` (5 tokens, vocab size 7)
+     - **Table**: `X = ZY`, `Y = ab`, `Z = aa`
+  After each step, our sequence of tokens gets shorter, but our vocabulary size grows by one.
+- To tokenize new text, we first convert it to a UTF-8 byte stream and then greedily apply the learned merge rules in order. To decode, we reverse the process, replacing merged tokens with their constituent byte pairs until we're back to the original byte stream.
+
+  
+### Training the Tokenizer
+
+#### Step 1: Initial Setup: 
+- We start with a representative sample of text (the longer, the better for statistics) and encode it into a stream of UTF-8 bytes. For easier manipulation, we convert this byte stream into a list of integers (0-255). This is our initial token sequence.
+
+#### Step 2: Define Core Functions:
+- We define two core functions:
+  - **`get_stats()`**: A function that iterates through the current token list and returns a dictionary of counts for all adjacent pairs.
+  - **`merge()`**: A function that takes a token list, a specific pair (like `(101, 32)`), and a new token ID (like `256`). It then returns a new token list where every occurrence of the pair is replaced by the new ID.
+
+#### Step 3: The Iterative Training Loop:
+- We choose a target vocabulary size as a hyperparameter (e.g., 276). The number of merges to perform.
+> Note: The number of times we perform this merge operation is a key hyperparameter. More merges lead to a larger vocabulary and shorter, more compressed sequences. Finding the right balance (e.g., GPT-4's ~100,000 token vocabulary seems to a good balance for LLMs) is a trade-off between sequence length and model complexity.
+- We loop for the desired number of merges. In each iteration:
+    - Use `get_stats()` on the current token list to find the most frequent pair.
+    - "Mint" a new token ID (the next available integer, starting at 256).
+    - Use `merge()` to replace all occurrences of the most frequent pair with the new token ID.
+    - Store the merge rule (e.g., `(101, 32) -> 256`) in a `merges` dictionary. This dictionary *is* our trained tokenizer vocabulary.
+
+>Note: It's important to note that newly created tokens (like 256) are immediately eligible for being part of a new pair in the next iteration. This is how BPE builds up tokens representing longer and longer character sequences, creating a "forest" of merge trees.
+
+- After the loop completes, we have our trained `merges` vocabulary. `merges` dictionary is our trained tokenizer vocabulary.
+
+- We can also measure the effectiveness of our tokenizer by calculating the **compression ratio**: the length of the original byte sequence divided by the length of the final token sequence. More merges will lead to a higher compression ratio and a larger vocabulary. Finding the right balance is a key hyperparameter trade-off.
+
+### Tokenization is a separate stage
+- The tokenizer is a completely separate entity from the LLM. Training the tokenizer is a distinct, one-time pre-processing stage that happens *before* LLM training.
+- The tokenizer is trained on its own corpus of text, which can be different from the dataset used to train the LLM. The composition of this training data is critical.
+- The mix of languages and content (e.g., code, prose) in the tokenizer's training set determines its efficiency. For example, including a large amount of Japanese text will lead to more Japanese-specific merges, resulting in better compression (shorter token sequences) for Japanese. This is beneficial for the LLM, which has a finite context window.
+- Once trained, the tokenizer acts as a translator. It has two main jobs:
+    - **Encoding**: Converting raw text into a sequence of token IDs.
+    - **Decoding**: Converting a sequence of token IDs back into raw text.
+<img src="images/tokenization.png" alt="tokenization" width="500" style="display: block; margin: 0 auto;">
+
+- A common workflow is to use the trained tokenizer to pre-process the entire LLM training dataset. All the text is converted into a massive sequence of tokens, which is then saved to disk. The LLM then trains directly on these token sequences, often without ever seeing the raw text again.
+
+### Decoder
+- We first create a `vocab` dictionary that maps every token ID to its corresponding byte sequence.
+    - We initialize it with the first 256 entries, mapping integers `0` through `255` to their single-byte representations.
+    - We then iterate through our trained `merges` dictionary *in the exact order they were created*. For each merge `(p1, p2) -> new_id`, we define the byte sequence for `new_id` as the concatenation of the byte sequences for `p1` and `p2`. Note, since python3.7, the order of dictionary items is guaranteed to be the same as the order of insertion.
+- We then decode the token IDs into a human-readable Python string using the `vocab` dictionary.
+- Finally, we convert the bytes to standard Python string using the `.decode('utf8')` method.
+- A crucial detail is that not all possible byte sequences are valid UTF-8. An LLM could potentially output a sequence of tokens that is invalid.
+    - By default, `.decode()` will throw a `UnicodeDecodeError`.
+    - To prevent this, we use the `errors='replace'` argument: `.decode('utf8', errors='replace')`. This will insert a special replacement character () for any invalid byte sequences, making the decoding process robust and signaling that the LLM produced a malformed output.
+
+### Encoder
+- We start by taking the input text, encoding it into UTF-8, and converting the resulting byte stream into a list of integers (0-255). This is our initial token sequence.
+- We repeatedly merge pairs in the token sequence based on our trained `merges` vocabulary.
+    - In each step of the loop, we find the pair of adjacent tokens in our current sequence that has the *lowest rank* (i.e., was learned earliest) in our `merges` dictionary.
+    - We then replace this single, highest-priority pair with its corresponding new token ID.
+    - We continue this process, one merge at a time, until there are no more mergeable pairs in the sequence according to our vocabulary.
+- Note, the implementation needs to handle short sequences (fewer than two tokens) where no merges are possible.
+- A key property to check is round-trip consistency. For any given text, `decode(encode(text))` should return the original text. This confirms our implementation is working correctly. The reverse is not necessarily true, as not all token sequences are valid.
