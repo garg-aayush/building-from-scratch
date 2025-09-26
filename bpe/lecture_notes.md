@@ -227,6 +227,41 @@ r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""
     2.  The final output projection layer (LM head) must also be extended to predict the new tokens.
     3.  These new weights are typically initialized randomly and then fine-tuned so the model learns their meaning.
 
+## minBPE Training
+- [minbpe](https://github.com/karpathy/minbpe) contains a clean, understandable implementation of the BPE algorithm.
+- The repository is intended as a reference and includes an `exercise.md` that breaks down the task of building a GPT-4 compatible tokenizer into four manageable steps.
+    - The goals of the exercise are to:
+        1.  Reproduce the exact encoding and decoding behavior of `tiktoken`'s GPT-4 tokenizer.
+        2.  Implement a `train` function to create new vocabularies from scratch, a feature that `tiktoken` does not provide.
+- The repository demonstrates how to train a new vocabulary. For example, a vocabulary was trained on the Taylor Swift Wikipedia page.
+- When comparing this custom vocabulary to GPT-4's, the differences between vocabularies are primarily due to the **training data**. The GPT-4 tokenizer vocabulary contains many merges for whitespace patterns (e.g., merging two spaces), suggesting its training data was rich in source code. In contrast, a vocabulary trained on a Wikipedia page will reflect the patterns of prose.
+
+## SentencePiece Library
+- [SentencePiece](https://github.com/google/sentencepiece) is another very common library for tokenization, used by popular models like Llama and Mistral. Unlike `tiktoken`, it is a feature-rich library that can handle both **training** new vocabularies and **inference** with existing ones.
+
+- The most significant difference with `tiktoken` is the fundamental unit it operates on.
+    - tiktoken (GPT-style): Works on bytes. It first encodes text to a UTF-8 byte stream and then merges the most frequent byte pairs. This is conceptually clean and robust.
+    - SentencePiece: Works on Unicode code points and optionally falls back to utf-8 bytes for rare code points (rarity is determined by the `chatacter_coverage` option). It builds a vocabulary by merging the most frequent code points found in the training data.
+
+- SentencePiece is a powerful but complex library with a massive number of configuration options, which can be a double-edged sword:
+    - Many options are legacy features from earlier NLP eras (e.g., machine translation) and are not relevant for training modern LLMs. Concepts like "sentences" as individual training examples feel outdated when we now prefer to treat text as a single, continuous stream.
+    - It includes many pre-processing and normalization rules (e.g., lowercasing, removing whitespace). For LLMs, the modern preference is to disable as many of these as possible and train on the raw, unaltered data.
+    - The sheer number of settings makes it very easy to misconfigure, leading to subtle bugs. The documentation can also be sparse, requiring a lot of trial-and-error to understand.
+
+- What happens if SentencePiece encounters a character (a code point) that wasn't in its training data?
+    - Without Byte Fallback: If the `byte_fallback` option is disabled, any rare or unseen character is mapped to a single `<unk>` (unknown) token. This is problematic because the model loses all information about the original characters, making it impossible to reconstruct the text.
+    - With Byte Fallback (Recommended): If `byte_fallback` is enabled (as it is in Llama), SentencePiece will take the rare code point, encode it into its raw UTF-8 bytes, and then represent those bytes using special byte-level tokens. This ensures that no information is lost and the original string can always be perfectly reconstructed.
+
+- One important setting used by Llama 2 is `add_dummy_prefix=true`. This addresses a key difference with `tiktoken`:
+    - In `tiktoken`, a word at the start of a sentence (e.g., `"Hello"`) and a word in the middle of a sentence (e.g., `" Hello"`) are two completely different tokens. The model has to learn their similarity from data.
+    - SentencePiece's `add_dummy_prefix` option "fixes" this by automatically adding a leading space to any string that doesn't already have one. This way, `"Hello"` becomes `" Hello"`, and it is tokenized identically to how it would appear in the middle of a sentence. This can help the model generalize better.
+
+- A trained SentencePiece vocabulary has a specific order:
+    1.  Special Tokens: `<unk>`, `<s>` (beginning of sequence), `</s>` (end of sequence).
+    2.  Byte Tokens: The 256 tokens for the byte fallback mechanism (if enabled).
+    3.  Merged Tokens: The new tokens created by the BPE merge process.
+    4.  Code Point Tokens: The individual characters (code points) that were present in the training data.
+
 ## Setting Vocabulary Set/Size
 - `vocab_size` does not appear often in most part of the model architecture. The only places it comes up are in the token embedding table and the LM head. It impacts these two key parts of a Transformer model:
     1.  **Token Embedding Table**: This is a matrix of size `(vocab_size, n_embed)`. Each token has its own embedding vector. As the vocabulary grows, this table gets larger, adding more parameters to the model.
