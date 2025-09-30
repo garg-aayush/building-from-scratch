@@ -1,35 +1,42 @@
 """Simple Byte Pair Encoding (BPE) Tokenizer
 
-Logic:
-    1. Start with a base vocabulary of all bytes (0-255)
-    2. Find the most frequently occurring pair of adjacent tokens
-    3. Create a new token that represents this pair
-    4. Replace all occurrences of the pair with the new token
-    5. Repeat steps 2-4 until desired vocabulary size is reached
+A BPE tokenizer implementation with regex-based text splitting to prevent merges
+across category boundaries (e.g., letters, numbers, whitespace).
+
+Training Logic:
+    1. Split input text into chunks using regex pattern
+    2. Start with base vocabulary of all bytes (0-255)
+    3. Find most frequently occurring pair across all chunks
+    4. Create new token for that pair
+    5. Replace all occurrences with the new token
+    6. Repeat steps 3-5 until desired vocabulary size is reached
 
 Components:
     - get_freqs(): Counts frequency of adjacent token pairs
     - merge(): Replaces all occurrences of a pair with a new token ID
     - BpeTokenizer: Main class with train(), encode(), and decode() methods
 
-Note: This is a minimal implementation and does not handle regex patterns or special tokens.
+Note: This implementation does not handle special tokens (e.g., <|endoftext|>).
 """
 
 from typing import Dict, List, Tuple
+
+import regex as re
 
 ########################################################
 # Helper Functions
 ########################################################
 
 # find the frequency of each byte pair
-def get_freqs(ids: List[int]) -> Dict[Tuple[int, int], int]:
+def get_freqs(ids: List[int], freqs: Dict[Tuple[int, int], int] = None) -> Dict[Tuple[int, int], int]:
     """
     Given a list of integers, return a dictionary of counts of consecutive pairs.
     Example:
         ids = [1, 2, 3, 1, 2]
         get_freqs(ids) = {(1, 2): 2, (2, 3): 1, (3, 1): 1}
     """
-    freqs = {}
+    if freqs is None:
+        freqs = {}
     # Count how frequently each adjacent id pair appears
     for pair in zip(ids, ids[1:]):
         freqs[pair] = freqs.get(pair, 0) + 1
@@ -61,10 +68,16 @@ def merge(ids: List[int], pair: Tuple[int, int], idx: int) -> List[int]:
 ########################################################
 # Main BPE Class
 ########################################################
+# GPT-2 text split patterns: https://github.com/openai/tiktoken/blob/main/tiktoken_ext/openai_public.py
+GPT2_SPLIT_PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+
 class BpeTokenizer:
     def __init__(self, regex_patterns: str = None):
         self.merges = {} # pair -> token mapping
         self.vocab = {}  # token -> bytes mapping
+        self.regex_pattern = GPT2_SPLIT_PATTERN if regex_patterns is None else regex_patterns
+        self.compiled_regex_pattern = re.compile(self.regex_pattern) # convert to regular expression object, it is more efficient for reuse
+        print(f"Regex pattern: {self.regex_pattern}")
         
     def train(self, text: str, vocab_size: int, verbose=False):
         assert vocab_size >= 256, "Vocab size must be at least 256"
@@ -72,21 +85,27 @@ class BpeTokenizer:
         if verbose:
             print(f"Training BPE tokenizer -> vocab_size: {vocab_size} and num_merges: {num_merges}")
         
-        # convert input text to list of ints
-        text_bytes = text.encode('utf-8')
-        ids = list(text_bytes)
+        # pre-process input text to chunks (list of strings)
+        if verbose:
+            print("Pre-processing input text to chunks...")
+        text_chunks = self.compiled_regex_pattern.findall(text)
+        
+        # convert input text_chunks to list of ints
+        ids = [list(t.encode('utf-8')) for t in text_chunks]
         
         # initialize vocab with single byte representations
         self.vocab = {idx: bytes([idx]) for idx in range(256)}
         for i in range(num_merges):
             # get frequency of each consecutive pair
-            freqs = get_freqs(ids)
+            freqs = {}
+            for chunk_ids in ids:
+                freqs = get_freqs(chunk_ids, freqs)
             # find the most frequent pair
             pair = max(freqs, key=freqs.get)
             # mint a new token id
             idx = 256 + i
             # replace all the occurences of the pair with the new token id
-            ids = merge(ids, pair, idx)
+            ids = [merge(chunk_ids, pair, idx) for chunk_ids in ids]
             # store the merge
             self.vocab[idx] = self.vocab[pair[0]] + self.vocab[pair[1]] # note, here we are concatenating the bytes objects
             self.merges[pair] = idx
@@ -99,9 +118,8 @@ class BpeTokenizer:
         # see https://docs.python.org/3/library/stdtypes.html#bytes.decode for more details
         return b"".join(self.vocab[id] for id in ids).decode('utf-8', errors='replace')
     
-    def encode(self, text: str) -> List[int]:
+    def _encode_single_chunk_(self, text_bytes: bytes) -> List[int]:
         # string -> list of ints
-        text_bytes = text.encode('utf-8')
         ids = list(text_bytes)
         
         while len(ids)>=2:
@@ -113,6 +131,15 @@ class BpeTokenizer:
                 break # as nothing left to merge
             idx = self.merges[pair]
             ids = merge(ids, pair, idx)
+        return ids
+    
+    def encode(self, text: str) -> List[int]:
+        # split text into chunks
+        text_chunks = self.compiled_regex_pattern.findall(text)
+        # encode each chunk
+        ids = [self._encode_single_chunk_(t.encode('utf-8')) for t in text_chunks]
+        # list of lists of ints -> list of ints
+        ids = [idx for chunk_ids in ids for idx in chunk_ids]
         return ids
 
 # main function (for testing)
