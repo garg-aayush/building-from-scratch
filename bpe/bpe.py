@@ -1,7 +1,7 @@
 """Simple Byte Pair Encoding (BPE) Tokenizer
 
-A BPE tokenizer implementation with regex-based text splitting to prevent merges
-across category boundaries (e.g., letters, numbers, whitespace).
+A BPE tokenizer implementation with regex-based text splitting and special token support.
+Uses regex patterns to prevent merges across category boundaries (letters, numbers, whitespace).
 
 Training Logic:
     1. Split input text into chunks using regex pattern
@@ -11,12 +11,17 @@ Training Logic:
     5. Replace all occurrences with the new token
     6. Repeat steps 3-5 until desired vocabulary size is reached
 
+Special Tokens:
+    - Register special tokens (e.g., <|endoftext|>) using register_special_tokens()
+    - Control encoding behavior with allowed_special_tokens parameter:
+        * "all": Encode special tokens as single token IDs
+        * "none": Treat special tokens as regular text
+        * "none_raise": Raise error if special tokens are found in text
+
 Components:
     - get_freqs(): Counts frequency of adjacent token pairs
     - merge(): Replaces all occurrences of a pair with a new token ID
-    - BpeTokenizer: Main class with train(), encode(), and decode() methods
-
-Note: This implementation does not handle special tokens (e.g., <|endoftext|>).
+    - BpeTokenizer: Main class with train(), encode(), decode() methods
 """
 
 from typing import Dict, List, Tuple
@@ -113,10 +118,25 @@ class BpeTokenizer:
             if verbose:
                 print(f"Merge {i+1} / {num_merges}: {pair} -> {idx} ({self.vocab[idx]} with {freqs[pair]} occurrences)")
     
+    # special tokesn = list of dict {key: string, value: int}
+    # replica of minbpe
+    def register_special_tokens(self, special_tokens: Dict[str, int]):
+        self.special_tokens = special_tokens
+        print(f"Registered special tokens: {special_tokens}")
+        self.inv_special_tokens = {v: k for k, v in special_tokens.items()}
+        
     def decode(self, ids: List[int]) -> str:
         # errors='replace' replaces any invalid utf-8 bytes with the replacement character
         # see https://docs.python.org/3/library/stdtypes.html#bytes.decode for more details
-        return b"".join(self.vocab[id] for id in ids).decode('utf-8', errors='replace')
+        input_bytes = []
+        for idx in ids:
+            if idx in self.vocab:
+                input_bytes.append(self.vocab[idx])
+            elif idx in self.inv_special_tokens:
+                input_bytes.append(self.inv_special_tokens[idx].encode('utf-8'))
+            else:
+                raise ValueError(f"Invalid token id: {idx}")
+        return b"".join(input_bytes).decode('utf-8', errors='replace')
     
     def _encode_single_chunk_(self, text_bytes: bytes) -> List[int]:
         # string -> list of ints
@@ -133,7 +153,7 @@ class BpeTokenizer:
             ids = merge(ids, pair, idx)
         return ids
     
-    def encode(self, text: str) -> List[int]:
+    def _encode_no_special_tokens(self, text: str) -> List[int]:
         # split text into chunks
         text_chunks = self.compiled_regex_pattern.findall(text)
         # encode each chunk
@@ -141,7 +161,55 @@ class BpeTokenizer:
         # list of lists of ints -> list of ints
         ids = [idx for chunk_ids in ids for idx in chunk_ids]
         return ids
-
+    
+    def encode(self, text: str, allowed_special_tokens: str = "none_raise") -> List[int]:
+        """
+        Encode text into a list of token IDs using BPE tokenization with regex pattern splitting
+        and special token handling.
+        
+        Args:
+            text (str): The input text to encode
+            allowed_special_tokens (str): Policy for handling special tokens:
+                - "none": Ignore special tokens, encode them as regular text
+                - "all": Allow all registered special tokens to be encoded as single tokens
+                - "none_raise": Raise error if any special tokens are found in text
+        """
+        # Validate the allowed_special_tokens parameter
+        assert allowed_special_tokens in ["all", "none", "none_raise"], "allowed_special_tokens must be 'all'/'none'/'none_raise'"
+        
+        # Convert string policy to actual token dictionary
+        if allowed_special_tokens == "none":
+            # Treat special tokens as regular text
+            allowed_special_tokens = {}
+        elif allowed_special_tokens == "all":
+            # Use all registered special tokens
+            allowed_special_tokens = self.special_tokens
+        elif allowed_special_tokens == "none_raise":
+            # Don't allow special tokens, but raise error if found
+            allowed_special_tokens = {}
+            assert all(token not in text for token in self.special_tokens), "Special tokens found in text"
+        
+        # If no special tokens are allowed, use the simpler encoding path
+        if not allowed_special_tokens:
+            return self._encode_no_special_tokens(text)
+        
+        # Create regex pattern to split text around special tokens
+        # The parentheses in the pattern ensure special tokens are included in the split results
+        # re.escape prevents regex injection from special token strings
+        special_pattern = "(" + "|".join(re.escape(k) for k in allowed_special_tokens) + ")"    
+        all_chunks = re.split(special_pattern, text)
+        
+        # Process each chunk: encode special tokens directly, encode regular text with BPE
+        ids = [] 
+        for chunk in all_chunks:
+            if chunk in allowed_special_tokens:
+                # chunk is a special token - add its ID directly
+                ids.append(allowed_special_tokens[chunk])
+            else:
+                # chunk is regular text - apply BPE encoding with regex pattern splitting
+                ids.extend(self._encode_no_special_tokens(chunk))
+        return ids
+        
 # main function (for testing)
 if __name__ == "__main__":
     # create tokenizer
@@ -152,6 +220,7 @@ if __name__ == "__main__":
     
     # Train tokenizer
     tokenizer.train(text, 276, verbose=True)
+    tokenizer.register_special_tokens({"<|endoftext|>": 276})
     
     # Test examples covering various edge cases
     test_examples = [
@@ -178,6 +247,11 @@ if __name__ == "__main__":
         
         # Long repeated sequences
         "hello" * 20,
+        
+        # Special tokens
+        "<|endoftext|>",
+        "<|endoftext|>hello world<|endoftext|>",
+        "<|endoftext|>hello world<|endoftext|>ojdf[h[fsdh [fjsd[jfs[a]]]]]",
     ]
     
     print("\n" + "#"*60)
@@ -188,7 +262,7 @@ if __name__ == "__main__":
         # Show truncated version for display if too long
         display_text = example if len(example) <= 40 else example[:37] + "..."
         
-        encoded = tokenizer.encode(example)
+        encoded = tokenizer.encode(example, allowed_special_tokens="all")
         decoded = tokenizer.decode(encoded)
         
         # Check roundtrip
