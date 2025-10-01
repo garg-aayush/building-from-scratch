@@ -4,19 +4,24 @@ A BPE tokenizer implementation with regex-based text splitting and special token
 Uses regex patterns to prevent merges across category boundaries (letters, numbers, whitespace).
 
 Training Logic:
-    1. Split input text into chunks using regex pattern
-    2. Start with base vocabulary of all bytes (0-255)
-    3. Find most frequently occurring pair across all chunks
-    4. Create new token for that pair
-    5. Replace all occurrences with the new token
-    6. Repeat steps 3-5 until desired vocabulary size is reached
+    1. Split input text by special tokens (if provided) to exclude them from merges
+    2. Split remaining text chunks using regex pattern
+    3. Start with base vocabulary of all bytes (0-255)
+    4. Find most frequently occurring byte pair across all chunks
+    5. Create new token for that pair and replace all occurrences
+    6. Repeat until desired vocabulary size is reached
 
-Special Tokens:
-    - Register special tokens (e.g., <|endoftext|>) using register_special_tokens()
-    - Control encoding behavior with allowed_special_tokens parameter:
-        * "all": Encode special tokens as single token IDs
-        * "none": Treat special tokens as regular text
-        * "none_raise": Raise error if special tokens are found in text
+Special Tokens (Two-Step Process):
+    1. During Training: Pass special_tokens as List[str] to train() to exclude from regex pattern splitting and BPE merges
+       Example: train(text, 276, special_tokens=["<|endoftext|>"])
+    
+    2. After Training: Register special tokens as Dict[str, int] using register_special_tokens()
+       Example: register_special_tokens({"<|endoftext|>": 276})
+    
+    3. During Encoding: Control behavior with allowed_special_tokens parameter:
+       - "all": Encode special tokens as single token IDs
+       - "none": Treat special tokens as regular text (apply BPE)
+       - "none_raise": Raise ValueError if special tokens found in text
 
 Tokenizer save and load:
     - save(prefix): Saves tokenizer to two files:
@@ -24,10 +29,14 @@ Tokenizer save and load:
         - prefix.vocab: Human-readable vocabulary for inspection
     - load(model_file): Loads a saved tokenizer from .model file
 
-Components:
-    - get_freqs(): Counts frequency of adjacent token pairs
-    - merge(): Replaces all occurrences of a pair with a new token ID
-    - BpeTokenizer: Main class with train(), encode(), decode() methods
+Main Methods:
+    - train(text, vocab_size, special_tokens, verbose): Train BPE tokenizer on text
+    - encode(text, allowed_special_tokens): Convert text to token IDs
+    - decode(ids): Convert token IDs back to text
+    - save(prefix): Save tokenizer to disk
+    - load(model_file): Load tokenizer from disk
+    - register_special_tokens(special_tokens): Register special tokens after training
+    - get_text_chunks(text, special_tokens, verbose): Split text into chunks using regex
 """
 
 import unicodedata
@@ -96,6 +105,26 @@ def render_token(t: bytes) -> str:
     s = replace_control_characters(s)
     return s
 
+def split_text_by_special_tokens(text: str, special_tokens: List[str] = None, verbose=False) -> List[str]:
+    """Split text by special tokens."""
+    assert special_tokens is not None, "special_tokens must be provided"
+    if verbose:
+        print(f"Splitting text by special tokens: {special_tokens}")
+    
+    # Create regex pattern to split by special tokens
+    special_pattern = "(" + "|".join(re.escape(token) for token in special_tokens) + ")"
+
+    # Split text by special tokens, keeping the special tokens in the result
+    text_segments = re.split(special_pattern, text)
+    if verbose:
+        print(f"Total text segments: {len(text_segments):,}")
+    
+    # remove empty '' segments and special tokens segments
+    text_segments = [segment for segment in text_segments if segment and segment not in special_tokens]
+    if verbose:
+        print(f"Total text segments after removing empty and special tokens segments: {len(text_segments):,}")
+    return text_segments
+
 ########################################################
 # Main BPE Class
 ########################################################
@@ -109,17 +138,48 @@ class BpeTokenizer:
         self.regex_pattern = GPT2_SPLIT_PATTERN if regex_patterns is None else regex_patterns
         self.compiled_regex_pattern = re.compile(self.regex_pattern) # convert to regular expression object, it is more efficient for reuse
         print(f"Regex pattern: {self.regex_pattern}")
+    
         
-    def train(self, text: str, vocab_size: int, verbose=False):
+    def get_text_chunks(self, text: str, special_tokens: List[str] = None, verbose=False) -> List[str]:
+        """Split text into chunks using the regex pattern."""
+        # Pre-process input text to chunks (list of strings)
+        if verbose:
+            print("Pre-processing input text to chunks...")
+        
+        # If special tokens are provided, split text by them first
+        if special_tokens:
+            text_segments = split_text_by_special_tokens(text, special_tokens, verbose)
+            # Process each segment: apply regex pattern to regular text
+            text_chunks = []
+            for segment in text_segments:
+                    text_chunks.extend(self.compiled_regex_pattern.findall(segment))
+        else:
+            # No special tokens - just apply regex pattern splitting
+            text_chunks = self.compiled_regex_pattern.findall(text)
+        
+        if verbose:
+            print(f"Total text chunks: {len(text_chunks)}")
+            
+        return text_chunks
+    
+    
+    def train(self, text: str, vocab_size: int, special_tokens: List[str] = None, verbose=False):
+        """
+        Train the BPE tokenizer on the given text.
+        
+        Args:
+            text (str): Input text to train on
+            vocab_size (int): Desired vocabulary size (must be >= 256)
+            special_tokens (List[str]): List of special tokens to exclude from merging (e.g., ["<|endoftext|>"])
+            verbose (bool): Whether to print training progress
+        """
         assert vocab_size >= 256, "Vocab size must be at least 256"
         num_merges = vocab_size - 256
         if verbose:
             print(f"Training BPE tokenizer -> vocab_size: {vocab_size} and num_merges: {num_merges}")
         
-        # pre-process input text to chunks (list of strings)
-        if verbose:
-            print("Pre-processing input text to chunks...")
-        text_chunks = self.compiled_regex_pattern.findall(text)
+        # get text chunks
+        text_chunks = self.get_text_chunks(text, special_tokens, verbose)
         
         # convert input text_chunks to list of ints
         ids = [list(t.encode('utf-8')) for t in text_chunks]
@@ -330,8 +390,11 @@ if __name__ == "__main__":
     with open("data/text.txt", "r") as f:
         text = f.read()
     
-    # Train tokenizer
-    tokenizer.train(text, 276, verbose=True)
+    # Train tokenizer with special tokens
+    # Note: We pass special_tokens during training to exclude them from BPE merges
+    special_token_list = ["<|endoftext|>"]
+    tokenizer.train(text, 276, special_tokens=special_token_list, verbose=True)
+    # Register special tokens with their IDs for encoding/decoding
     tokenizer.register_special_tokens({"<|endoftext|>": 276})
     tokenizer.save("data/tok276")
     
