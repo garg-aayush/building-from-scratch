@@ -39,6 +39,7 @@ Main Methods:
     - get_text_chunks(text, special_tokens, verbose): Split text into chunks using regex
 """
 
+import time
 import unicodedata
 from typing import Dict, List, Tuple
 
@@ -173,13 +174,19 @@ class BpeTokenizer:
             special_tokens (List[str]): List of special tokens to exclude from merging (e.g., ["<|endoftext|>"])
             verbose (bool): Whether to print training progress
         """
+        # start time
+        train_start = time.time()
+        
         assert vocab_size >= 256, "Vocab size must be at least 256"
         num_merges = vocab_size - 256
         if verbose:
             print(f"Training BPE tokenizer -> vocab_size: {vocab_size} and num_merges: {num_merges}")
         
         # get text chunks
+        pretokenize_start = time.time()
         text_chunks = self.get_text_chunks(text, special_tokens, verbose)
+        if verbose:
+            print(f"Pre-tokenization time: {time.time() - pretokenize_start:.4f} seconds")
         
         # convert input text_chunks to list of ints
         ids = [list(t.encode('utf-8')) for t in text_chunks]
@@ -187,6 +194,8 @@ class BpeTokenizer:
         # initialize vocab with single byte representations
         self.vocab = {idx: bytes([idx]) for idx in range(256)}
         for i in range(num_merges):
+            merge_start = time.time()
+            
             # get frequency of each consecutive pair
             freqs = {}
             for chunk_ids in ids:
@@ -202,7 +211,9 @@ class BpeTokenizer:
             self.merges[pair] = idx
             # print the merges
             if verbose:
-                print(f"Merge {i+1} / {num_merges}: {pair} -> {idx} ({self.vocab[idx]} with {freqs[pair]} occurrences)")
+                print(f"Merge {i+1} / {num_merges}: {pair} -> {idx} ({self.vocab[idx]} with {freqs[pair]} occurrences) in {time.time() - merge_start:.4f} s")
+        if verbose:
+            print(f"Training time: {(time.time() - train_start)/60:.2f} mins")
     
     # special tokesn = list of dict {key: string, value: int}
     # replica of minbpe
