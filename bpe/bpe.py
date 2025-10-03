@@ -6,10 +6,19 @@ Uses regex patterns to prevent merges across category boundaries (letters, numbe
 Training Logic:
     1. Split input text by special tokens (if provided) to exclude them from merges
     2. Split remaining text chunks using regex pattern
-    3. Start with base vocabulary of all bytes (0-255)
-    4. Find most frequently occurring byte pair across all chunks
-    5. Create new token for that pair and replace all occurrences
-    6. Repeat until desired vocabulary size is reached
+    3. Collapse corpus to unique pre-token tuples with occurrence frequencies
+       (This optimization avoids redundant processing of repeated tokens)
+    4. Start with base vocabulary of all bytes (0-255)
+    5. Find most frequently occurring byte pair across unique sequences (weighted by frequencies)
+    6. Create new token for that pair and merge in unique sequences only
+    7. Repeat until desired vocabulary size is reached
+
+Performance Optimization:
+    Instead of processing every token occurrence individually, the tokenizer:
+    - Converts text chunks to unique id tuples tracked with frequencies using Counter
+    - Counts pairs from unique sequences weighted by their occurrence counts
+    - Performs merges on unique sequences only, not all occurrences
+    This dramatically reduces computation for datasets with repeated tokens/patterns
 
 Special Tokens (Two-Step Process):
     1. During Training: Pass special_tokens as List[str] to train() to exclude from regex pattern splitting and BPE merges
@@ -41,6 +50,7 @@ Main Methods:
 
 import time
 import unicodedata
+from collections import Counter
 from typing import Dict, List, Tuple
 
 import regex as re
@@ -49,22 +59,25 @@ import regex as re
 # Helper Functions
 ########################################################
 
-# find the frequency of each byte pair
-def get_freqs(ids: List[int], freqs: Dict[Tuple[int, int], int] = None) -> Dict[Tuple[int, int], int]:
+# find the frequency of each byte pair across unique id sequences
+def get_ids_freqs(ids_freqs: Dict[Tuple[int, ...], int]) -> Dict[Tuple[int, int], int]:
     """
-    Given a list of integers, return a dictionary of counts of consecutive pairs.
-    Example:
-        ids = [1, 2, 3, 1, 2]
-        get_freqs(ids) = {(1, 2): 2, (2, 3): 1, (3, 1): 1}
+    Count all adjacent byte pairs across unique id sequences, weighted by their frequencies. This is more efficient than counting pairs from every token occurrence.
+    
+    Args:
+        ids_freqs: Dictionary mapping unique id tuples to their occurrence counts
+        
+    Returns:
+        Dictionary mapping byte pairs to their total occurrence counts
+        
     """
-    if freqs is None:
-        freqs = {}
-    # Count how frequently each adjacent id pair appears
-    for pair in zip(ids, ids[1:]):
-        freqs[pair] = freqs.get(pair, 0) + 1
-    return freqs
+    pair_freqs = {}
+    for ids, freq in ids_freqs.items():
+        for pair in zip(ids, ids[1:]):
+            pair_freqs[pair] = pair_freqs.get(pair, 0) + freq
+    return pair_freqs
 
-def merge(ids: List[int], pair: Tuple[int, int], idx: int) -> List[int]:
+def merge(ids: Tuple[int, ...], pair: Tuple[int, int], idx: int) -> Tuple[int, ...]:
     """
     In a list of integers, merge all consecutive occurrences of pair into a new integer idx.
     Example:
@@ -77,14 +90,25 @@ def merge(ids: List[int], pair: Tuple[int, int], idx: int) -> List[int]:
     # Sweep through ids and replace target pairs with merged token
     i = 0
     while i < len(ids):
-        if i<len(ids)-1 and ids[i:i+2] == list(pair):
+        if i < len(ids) - 1 and (ids[i], ids[i + 1]) == pair:
             # When the next two ids match the merge pair, emit the new token
             new_ids.append(idx)
             i += 2
         else:
             new_ids.append(ids[i])
             i += 1
-    return new_ids
+    return tuple(new_ids)
+
+def merge_pair_in_ids_freqs(ids_freqs: Dict[Tuple[int, ...], int], pair: Tuple[int, int], idx: int) -> Dict[Tuple[int, ...], int]:
+    """
+    Merge a specific pair in all unique id sequences and return updated frequencies.
+    This only processes unique id sequences, not every occurrence.
+    """
+    new_ids_freqs = {}
+    for ids, freq in ids_freqs.items():
+        new_ids = merge(ids, pair, idx)
+        new_ids_freqs[new_ids] = freq
+    return new_ids_freqs
 
 # helper functions for .vocab file
 def replace_control_characters(s: str) -> str:
@@ -188,27 +212,43 @@ class BpeTokenizer:
         if verbose:
             print(f"Pre-tokenization time: {time.time() - pretokenize_start:.4f} seconds")
         
-        # convert input text_chunks to list of ints
-        ids = [list(t.encode('utf-8')) for t in text_chunks]
+        # Convert text chunks to unique id tuples with frequencies, this collapses the corpus to only unique pre-tokens
+        if verbose:
+            print("Collapsing corpus to unique pre-token tuples with freqs...")
+        ids_freqs = Counter()
+        for chunk in text_chunks:
+            # Convert each chunk to a tuple of bytes (makes it hashable for Counter)
+            byte_tuple = tuple(chunk.encode('utf-8'))
+            ids_freqs[byte_tuple] += 1
+        if verbose:
+            print(f"Found {len(ids_freqs):,} unique pre-tokens from {len(text_chunks):,} total chunks")
+        
         
         # initialize vocab with single byte representations
         self.vocab = {idx: bytes([idx]) for idx in range(256)}
         for i in range(num_merges):
             merge_start = time.time()
             
-            # get frequency of each consecutive pair
-            freqs = {}
-            for chunk_ids in ids:
-                freqs = get_freqs(chunk_ids, freqs)
+            # Count pairs from unique id sequences weighted by their frequencies instead of counting from every token occurrence
+            freqs = get_ids_freqs(ids_freqs)
+            if not freqs:
+                if verbose:
+                    print(f"No more pairs to merge after {i} merges")
+                break
+            
             # find the most frequent pair
             pair = max(freqs, key=freqs.get)
+            
             # mint a new token id
             idx = 256 + i
-            # replace all the occurences of the pair with the new token id
-            ids = [merge(chunk_ids, pair, idx) for chunk_ids in ids]
+            
+            # Merge the pair in unique id sequences only, not all occurrences
+            ids_freqs = merge_pair_in_ids_freqs(ids_freqs, pair, idx)
+            
             # store the merge
             self.vocab[idx] = self.vocab[pair[0]] + self.vocab[pair[1]] # note, here we are concatenating the bytes objects
             self.merges[pair] = idx
+            
             # print the merges
             if verbose:
                 print(f"Merge {i+1} / {num_merges}: {pair} -> {idx} ({self.vocab[idx]} with {freqs[pair]} occurrences) in {time.time() - merge_start:.4f} s")
