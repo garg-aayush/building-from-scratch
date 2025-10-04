@@ -66,13 +66,30 @@ import time
 import unicodedata
 from collections import Counter
 from multiprocessing import Pool
-from typing import BinaryIO, Dict, List, Tuple
+from typing import BinaryIO, Dict, List, Tuple, Union
 
 import regex as re
 
 ########################################################
 # Helper Functions
 ########################################################
+
+# find the frequency of each byte pair in a single sequence (used during encoding)
+def get_freqs(ids: List[int]) -> Dict[Tuple[int, int], int]:
+    """
+    Count all adjacent byte pairs in a single sequence of ids.
+    Used during encoding to find which pairs to merge.
+    
+    Args:
+        ids: List of token IDs
+        
+    Returns:
+        Dictionary mapping byte pairs to their occurrence counts in this sequence
+    """
+    pair_freqs = {}
+    for pair in zip(ids, ids[1:]):
+        pair_freqs[pair] = pair_freqs.get(pair, 0) + 1
+    return pair_freqs
 
 # find the frequency of each byte pair across unique id sequences
 def get_ids_freqs(ids_freqs: Dict[Tuple[int, ...], int]) -> Dict[Tuple[int, int], int]:
@@ -92,7 +109,7 @@ def get_ids_freqs(ids_freqs: Dict[Tuple[int, ...], int]) -> Dict[Tuple[int, int]
             pair_freqs[pair] = pair_freqs.get(pair, 0) + freq
     return pair_freqs
 
-def merge(ids: Tuple[int, ...], pair: Tuple[int, int], idx: int) -> Tuple[int, ...]:
+def merge(ids: Union[List[int], Tuple[int, ...]], pair: Tuple[int, int], idx: int) -> Tuple[int, ...]:
     """
     In a list of integers, merge all consecutive occurrences of pair into a new integer idx.
     Example:
@@ -350,6 +367,10 @@ class BpeTokenizer:
             if verbose:
                 print("Sequential pre-tokenization")
             
+            # Read the input file
+            with open(input_file_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+            
             text_chunks = self.get_text_chunks(text, special_tokens, verbose)
             
             # Convert text chunks to unique id tuples with frequencies
@@ -424,11 +445,14 @@ class BpeTokenizer:
         # string -> list of ints
         ids = list(text_bytes)
         
-        while len(ids)>=2:
-            # find the pair with the lowest merge index (earliest merge in training)
-            # note: since python3.7, the order of dictionary items is guaranteed to be the same as the order of insertion
+        while len(ids) >= 2:
+            # Find the pair with the lowest merge index (earliest merge in training)
+            # Optimization: collect unique pairs first, then find min
+            # This avoids redundant lookups for duplicate pairs
             freqs = get_freqs(ids)
             pair = min(freqs, key=lambda p: self.merges.get(p, float('inf')))
+            # pairs = set(zip(ids, ids[1:]))
+            # pair = min(pairs, key=lambda p: self.merges.get(p, float('inf')))
             if pair not in self.merges:
                 break # as nothing left to merge
             idx = self.merges[pair]
