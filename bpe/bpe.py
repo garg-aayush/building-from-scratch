@@ -449,10 +449,10 @@ class BpeTokenizer:
             # Find the pair with the lowest merge index (earliest merge in training)
             # Optimization: collect unique pairs first, then find min
             # This avoids redundant lookups for duplicate pairs
-            freqs = get_freqs(ids)
-            pair = min(freqs, key=lambda p: self.merges.get(p, float('inf')))
-            # pairs = set(zip(ids, ids[1:]))
-            # pair = min(pairs, key=lambda p: self.merges.get(p, float('inf')))
+            # freqs = get_freqs(ids)
+            # pair = min(freqs, key=lambda p: self.merges.get(p, float('inf')))
+            pairs = set(zip(ids, ids[1:]))
+            pair = min(pairs, key=lambda p: self.merges.get(p, float('inf')))
             if pair not in self.merges:
                 break # as nothing left to merge
             idx = self.merges[pair]
