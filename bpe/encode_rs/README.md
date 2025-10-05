@@ -82,11 +82,9 @@ python run.py
 Similar to the Rust version, you can write your own Python code to use the BPE encoder by importing the `bpe_encode_rust` module similar to the example in `run.py`.
 
 ### Benchmark
-Once you have everything installed, you can benchmark the performance of the Rust implementation and verify correctness by running:
+Once you have everything installed, you can benchmark the performance of the Rust implementation by running the following command:
 
 ```bash
 # From bpe/ directory
 python benchmark_rust_vs_python.py
 ```
-
-This script not only measures performance but also verifies that both implementations produce identical outputs.

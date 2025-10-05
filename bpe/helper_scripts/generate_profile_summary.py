@@ -2,7 +2,7 @@ import pstats
 from pstats import SortKey
 
 # Load the profile
-profile_path = 'logs/profile_tinystoriesv2_valid_baseline.prof'
+profile_path = '../logs/profile_tinystoriesv2_valid_baseline.prof'
 
 
 p = pstats.Stats(profile_path)
