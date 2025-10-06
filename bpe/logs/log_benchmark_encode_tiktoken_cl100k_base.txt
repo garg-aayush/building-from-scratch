@@ -1,0 +1,47 @@
+======================================================================
+Tiktoken Tokenizer Encoding Benchmark (cl100k_base)
+======================================================================
+
+📥 Loading tiktoken model: cl100k_base
+✓ Tokenizer loaded in 0.1270 seconds
+  Model: cl100k_base
+  Vocab size: 100,277
+
+📖 Reading input file: data/TinyStoriesV2-GPT4-valid.txt
+✓ File read in 0.0078 seconds
+  Characters: 22,493,387
+  Bytes (UTF-8): 22,502,601 (21.46 MB)
+  Lines: 157,831
+
+🔄 Encoding text (allowed_special=all)...
+✓ Encoding completed in 1.3967 seconds
+  Tokens: 5,384,984
+
+======================================================================
+Performance Metrics
+======================================================================
+
+📊 Throughput:
+  16,104,934 chars/sec
+  15.37 MB/sec
+  3,855,569 tokens/sec
+
+📈 Compression:
+  4.18 chars/token
+  4.18 bytes/token
+
+⏱️  Timing Breakdown:
+  Load tokenizer: 0.1270s
+  Read file:      0.0078s
+  Encode:         1.3967s
+  Total:          1.5314s
+
+======================================================================
+
+######################################################################
+Quick Verification Test (first 1000 chars)
+######################################################################
+Original:  'u don\'t have to be scared of the loud dog, I\'ll protect you". The mole felt so safe with the little '...
+Tokens:    [84, 1541, 956, 617, 311, 387, 27207, 315, 279, 17813, 5679, 11, 358, 3358, 6144, 499, 3343, 578, 35751, 6612]...
+Decoded:   'u don\'t have to be scared of the loud dog, I\'ll protect you". The mole felt so safe with the little '...
+Roundtrip: ✓ PASS

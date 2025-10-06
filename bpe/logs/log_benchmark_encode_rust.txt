@@ -1,0 +1,55 @@
+Loaded BPE model from data/tinystoriesv2-gpt4-train-2048.model
+  Vocabulary size: 2048
+  Number of merges: 1792
+  Special tokens: ["<|endoftext|>"]
+  Regex pattern: '(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+
+Loaded BPE model from data/tinystoriesv2-gpt4-train-2048.model
+  Vocabulary size: 2048
+  Number of merges: 1792
+  Special tokens: ["<|endoftext|>"]
+  Regex pattern: '(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+
+======================================================================
+Rust BPE Tokenizer Encoding Benchmark
+======================================================================
+
+📥 Loading Rust tokenizer from: data/tinystoriesv2-gpt4-train-2048.model
+✓ Tokenizer loaded in 0.0014 seconds
+
+📖 Reading input file: data/TinyStoriesV2-GPT4-valid.txt
+✓ File read in 0.0071 seconds
+  Characters: 22,493,387
+  Bytes (UTF-8): 22,502,601 (21.46 MB)
+  Lines: 157,831
+
+🔄 Encoding text (allowed_special='all')...
+✓ Encoding completed in 5.2645 seconds
+  Tokens: 6,091,938
+
+======================================================================
+Performance Metrics
+======================================================================
+
+📊 Throughput:
+  4,272,618 chars/sec
+  4.08 MB/sec
+  1,157,163 tokens/sec
+
+📈 Compression:
+  3.69 chars/token
+  3.69 bytes/token
+
+⏱️  Timing Breakdown:
+  Load tokenizer: 0.0014s
+  Read file:      0.0071s
+  Encode:         5.2645s
+  Total:          5.2731s
+
+======================================================================
+
+######################################################################
+Quick Verification Test (first 1000 chars)
+######################################################################
+Original:  'u don\'t have to be scared of the loud dog, I\'ll protect you". The mole felt so safe with the little '...
+Tokens:    [117, 861, 491, 498, 265, 321, 607, 369, 262, 910, 464, 44, 337, 1964, 608, 299, 1255, 348, 1602, 284]...
+Decoded:   'u don\'t have to be scared of the loud dog, I\'ll protect you". The mole felt so safe with the little '...
+Roundtrip: ✓ PASS
