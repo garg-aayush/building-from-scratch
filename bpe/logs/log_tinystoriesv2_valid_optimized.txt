@@ -1,0 +1,29 @@
+Regex pattern: '(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+
+Training BPE tokenizer -> vocab_size: 276 and num_merges: 20
+Pre-processing input text to chunks...
+Total text chunks: 5501965
+Pre-tokenization time: 0.8139 seconds
+Collapsing corpus to unique pre-token tuples with freqs...
+Found 13,113 unique pre-tokens from 5,501,965 total chunks
+Merge 1 / 20: (32, 116) -> 256 (b' t' with 641902 occurrences) in 0.0188 s
+Merge 2 / 20: (104, 101) -> 257 (b'he' with 639606 occurrences) in 0.0184 s
+Merge 3 / 20: (32, 97) -> 258 (b' a' with 479229 occurrences) in 0.0181 s
+Merge 4 / 20: (32, 115) -> 259 (b' s' with 327136 occurrences) in 0.0182 s
+Merge 5 / 20: (32, 119) -> 260 (b' w' with 319705 occurrences) in 0.0178 s
+Merge 6 / 20: (110, 100) -> 261 (b'nd' with 319330 occurrences) in 0.0180 s
+Merge 7 / 20: (256, 257) -> 262 (b' the' with 292733 occurrences) in 0.0177 s
+Merge 8 / 20: (101, 100) -> 263 (b'ed' with 251311 occurrences) in 0.0180 s
+Merge 9 / 20: (32, 98) -> 264 (b' b' with 223850 occurrences) in 0.0176 s
+Merge 10 / 20: (256, 111) -> 265 (b' to' with 211359 occurrences) in 0.0176 s
+Merge 11 / 20: (258, 261) -> 266 (b' and' with 196057 occurrences) in 0.0175 s
+Merge 12 / 20: (32, 104) -> 267 (b' h' with 180175 occurrences) in 0.0176 s
+Merge 13 / 20: (32, 102) -> 268 (b' f' with 171199 occurrences) in 0.0174 s
+Merge 14 / 20: (32, 84) -> 269 (b' T' with 166853 occurrences) in 0.0175 s
+Merge 15 / 20: (105, 110) -> 270 (b'in' with 166420 occurrences) in 0.0173 s
+Merge 16 / 20: (260, 97) -> 271 (b' wa' with 163967 occurrences) in 0.0170 s
+Merge 17 / 20: (114, 101) -> 272 (b're' with 150563 occurrences) in 0.0169 s
+Merge 18 / 20: (105, 116) -> 273 (b'it' with 150312 occurrences) in 0.0168 s
+Merge 19 / 20: (111, 117) -> 274 (b'ou' with 147192 occurrences) in 0.0169 s
+Merge 20 / 20: (32, 108) -> 275 (b' l' with 134745 occurrences) in 0.0168 s
+Training time: 0.04 mins
+Registered special tokens: {'<|endoftext|>': 276}

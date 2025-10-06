@@ -1,0 +1,137 @@
+================================================================================
+PROFILE SUMMARY: TinyStoriesV2 BPE Training
+================================================================================
+
+Total Runtime: 218.929 seconds (3.65 minutes)
+
+================================================================================
+TOP 20 FUNCTIONS BY CUMULATIVE TIME
+================================================================================
+Fri Oct  3 19:12:14 2025    logs/profile_tinystoriesv2_valid_baseline.prof
+
+         1747624383 function calls (1747624181 primitive calls) in 218.929 seconds
+
+   Ordered by: cumulative time
+   List reduced from 510 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+      7/1    0.000    0.000  218.929  218.929 {built-in method builtins.exec}
+        1    0.144    0.144  218.929  218.929 train_TinyStoriesV2.py:1(<module>)
+        1    8.969    8.969  218.765  218.765 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:167(train)
+       20    7.644    0.382  154.241    7.712 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:208(<listcomp>)
+110039300  119.141    0.000  146.596    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:67(merge)
+110039300   44.300    0.000   52.780    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:53(get_freqs)
+868383701/868383687   18.559    0.000   18.559    0.000 {built-in method builtins.len}
+379172833    8.896    0.000    8.896    0.000 {method 'append' of 'list' objects}
+274471646    8.481    0.000    8.481    0.000 {method 'get' of 'dict' objects}
+        1    1.764    1.764    1.954    1.954 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:192(<listcomp>)
+        1    0.000    0.000    0.821    0.821 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:144(get_text_chunks)
+        1    0.821    0.821    0.821    0.821 {method 'findall' of '_regex.Pattern' objects}
+  5501965    0.190    0.000    0.190    0.000 {method 'encode' of 'str' objects}
+        1    0.005    0.005    0.011    0.011 {method 'read' of '_io.TextIOWrapper' objects}
+     10/1    0.000    0.000    0.007    0.007 <frozen importlib._bootstrap>:1022(_find_and_load)
+     10/1    0.000    0.000    0.007    0.007 <frozen importlib._bootstrap>:987(_find_and_load_unlocked)
+      9/1    0.000    0.000    0.007    0.007 <frozen importlib._bootstrap>:664(_load_unlocked)
+      6/1    0.000    0.000    0.007    0.007 <frozen importlib._bootstrap_external>:877(exec_module)
+     13/1    0.000    0.000    0.007    0.007 <frozen importlib._bootstrap>:233(_call_with_frames_removed)
+        1    0.000    0.000    0.007    0.007 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:1(<module>)
+
+
+
+================================================================================
+TOP 20 FUNCTIONS BY INTERNAL TIME (tottime)
+================================================================================
+Fri Oct  3 19:12:14 2025    logs/profile_tinystoriesv2_valid_baseline.prof
+
+         1747624383 function calls (1747624181 primitive calls) in 218.929 seconds
+
+   Ordered by: internal time
+   List reduced from 510 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+110039300  119.141    0.000  146.596    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:67(merge)
+110039300   44.300    0.000   52.780    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:53(get_freqs)
+868383701/868383687   18.559    0.000   18.559    0.000 {built-in method builtins.len}
+        1    8.969    8.969  218.765  218.765 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:167(train)
+379172833    8.896    0.000    8.896    0.000 {method 'append' of 'list' objects}
+274471646    8.481    0.000    8.481    0.000 {method 'get' of 'dict' objects}
+       20    7.644    0.382  154.241    7.712 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:208(<listcomp>)
+        1    1.764    1.764    1.954    1.954 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:192(<listcomp>)
+        1    0.821    0.821    0.821    0.821 {method 'findall' of '_regex.Pattern' objects}
+  5501965    0.190    0.000    0.190    0.000 {method 'encode' of 'str' objects}
+        1    0.144    0.144  218.929  218.929 train_TinyStoriesV2.py:1(<module>)
+        1    0.006    0.006    0.006    0.006 {built-in method _codecs.utf_8_decode}
+        1    0.005    0.005    0.011    0.011 {method 'read' of '_io.TextIOWrapper' objects}
+        2    0.001    0.001    0.001    0.001 {built-in method _imp.create_dynamic}
+5255/5254    0.001    0.000    0.001    0.000 {built-in method builtins.max}
+        6    0.001    0.000    0.001    0.000 {method 'read' of '_io.BufferedReader' objects}
+        1    0.001    0.001    0.004    0.004 /Users/aayushgarg/pkgs/miniconda3/envs/diffusers/lib/python3.10/site-packages/regex/_regex_core.py:1(<module>)
+        6    0.001    0.000    0.001    0.000 {built-in method marshal.loads}
+       27    0.000    0.000    0.000    0.000 {built-in method builtins.print}
+       75    0.000    0.000    0.001    0.000 {built-in method builtins.__build_class__}
+
+
+
+================================================================================
+TOP 20 FUNCTIONS BY CALL COUNT
+================================================================================
+Fri Oct  3 19:12:14 2025    logs/profile_tinystoriesv2_valid_baseline.prof
+
+         1747624383 function calls (1747624181 primitive calls) in 218.929 seconds
+
+   Ordered by: call count
+   List reduced from 510 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+868383701/868383687   18.559    0.000   18.559    0.000 {built-in method builtins.len}
+379172833    8.896    0.000    8.896    0.000 {method 'append' of 'list' objects}
+274471646    8.481    0.000    8.481    0.000 {method 'get' of 'dict' objects}
+110039300  119.141    0.000  146.596    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:67(merge)
+110039300   44.300    0.000   52.780    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:53(get_freqs)
+  5501965    0.190    0.000    0.190    0.000 {method 'encode' of 'str' objects}
+5255/5254    0.001    0.000    0.001    0.000 {built-in method builtins.max}
+      691    0.000    0.000    0.000    0.000 {built-in method builtins.isinstance}
+      449    0.000    0.000    0.000    0.000 {method 'join' of 'str' objects}
+      374    0.000    0.000    0.000    0.000 /Users/aayushgarg/pkgs/miniconda3/envs/diffusers/lib/python3.10/sre_parse.py:234(__next)
+      370    0.000    0.000    0.000    0.000 /Users/aayushgarg/pkgs/miniconda3/envs/diffusers/lib/python3.10/types.py:176(__get__)
+      370    0.000    0.000    0.000    0.000 /Users/aayushgarg/pkgs/miniconda3/envs/diffusers/lib/python3.10/enum.py:446(<genexpr>)
+      370    0.000    0.000    0.000    0.000 /Users/aayushgarg/pkgs/miniconda3/envs/diffusers/lib/python3.10/enum.py:801(value)
+      348    0.000    0.000    0.000    0.000 {built-in method unicodedata.category}
+      316    0.000    0.000    0.000    0.000 {method 'decode' of 'bytes' objects}
+      316    0.000    0.000    0.000    0.000 /Users/aayushgarg/pkgs/miniconda3/envs/diffusers/lib/python3.10/sre_parse.py:255(get)
+      316    0.000    0.000    0.000    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:90(replace_control_characters)
+      316    0.000    0.000    0.000    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:103(render_token)
+      301    0.000    0.000    0.000    0.000 {method 'write' of '_io.TextIOWrapper' objects}
+      290    0.000    0.000    0.000    0.000 /Users/aayushgarg/pkgs/miniconda3/envs/diffusers/lib/python3.10/enum.py:359(__call__)
+
+
+
+================================================================================
+FUNCTIONS IN bpe.py ONLY
+================================================================================
+Fri Oct  3 19:12:14 2025    logs/profile_tinystoriesv2_valid_baseline.prof
+
+         1747624383 function calls (1747624181 primitive calls) in 218.929 seconds
+
+   Ordered by: cumulative time
+   List reduced from 510 to 16 due to restriction <'bpe.py'>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    8.969    8.969  218.765  218.765 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:167(train)
+       20    7.644    0.382  154.241    7.712 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:208(<listcomp>)
+110039300  119.141    0.000  146.596    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:67(merge)
+110039300   44.300    0.000   52.780    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:53(get_freqs)
+        1    1.764    1.764    1.954    1.954 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:192(<listcomp>)
+        1    0.000    0.000    0.821    0.821 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:144(get_text_chunks)
+        1    0.000    0.000    0.007    0.007 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:1(<module>)
+        1    0.000    0.000    0.001    0.001 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:136(__init__)
+        1    0.000    0.000    0.001    0.001 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:311(save)
+      316    0.000    0.000    0.000    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:103(render_token)
+      316    0.000    0.000    0.000    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:90(replace_control_characters)
+        1    0.000    0.000    0.000    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:195(<dictcomp>)
+        1    0.000    0.000    0.000    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:220(register_special_tokens)
+        1    0.000    0.000    0.000    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:135(BpeTokenizer)
+        1    0.000    0.000    0.000    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:334(<dictcomp>)
+        1    0.000    0.000    0.000    0.000 /Users/aayushgarg/repos/building-from-scratch/bpe/bpe.py:223(<dictcomp>)
+
+

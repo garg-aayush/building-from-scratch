@@ -1,22 +1,48 @@
 """Simple Byte Pair Encoding (BPE) Tokenizer
 
-A BPE tokenizer implementation with regex-based text splitting and special token support.
+A BPE tokenizer implementation with regex-based text splitting, special token support, 
+and parallel pre-tokenization for efficient training on large datasets.
 Uses regex patterns to prevent merges across category boundaries (letters, numbers, whitespace).
 
 Training Logic:
-    1. Split input text into chunks using regex pattern
-    2. Start with base vocabulary of all bytes (0-255)
-    3. Find most frequently occurring pair across all chunks
-    4. Create new token for that pair
-    5. Replace all occurrences with the new token
-    6. Repeat steps 3-5 until desired vocabulary size is reached
+    1. Load input text file and optionally split into chunks using boundary_split_token
+    2. Pre-tokenize chunks (sequentially or in parallel using multiprocessing):
+       - Split by special tokens (if provided) to exclude them from merges
+       - Apply regex pattern splitting to remaining text
+       - Convert to byte tuples and track frequencies
+    3. Collapse corpus to unique pre-token tuples with occurrence frequencies
+       (This optimization avoids redundant processing of repeated tokens)
+    4. Start with base vocabulary of all bytes (0-255)
+    5. Find most frequently occurring byte pair across unique sequences (weighted by frequencies)
+    6. Create new token for that pair and merge in unique sequences only
+    7. Repeat until desired vocabulary size is reached
 
-Special Tokens:
-    - Register special tokens (e.g., <|endoftext|>) using register_special_tokens()
-    - Control encoding behavior with allowed_special_tokens parameter:
-        * "all": Encode special tokens as single token IDs
-        * "none": Treat special tokens as regular text
-        * "none_raise": Raise error if special tokens are found in text
+Performance Optimizations:
+    1. Frequency-based approach:
+       - Converts text chunks to unique id tuples tracked with frequencies using Counter
+       - Counts pairs from unique sequences weighted by their occurrence counts
+       - Performs merges on unique sequences only, not all occurrences
+       - Dramatically reduces computation for datasets with repeated tokens/patterns
+    
+    2. Parallel pre-tokenization (optional):
+       - Splits large files into chunks at boundary_split_token boundaries
+       - Processes chunks in parallel using multiprocessing.Pool
+       - Merges frequency counts from all chunks
+       - Significantly speeds up pre-tokenization stage for large datasets
+       - Enable with num_processes parameter (e.g., num_processes=4)
+
+Special Tokens (Two-Step Process):
+    1. During Training: Pass special_tokens as List[str] to train() to exclude from regex pattern splitting and BPE merges
+       Example: train(input_file_path="data.txt", vocab_size=276, special_tokens=["<|endoftext|>"], 
+                     boundary_split_token="<|endoftext|>", num_processes=4)
+    
+    2. After Training: Register special tokens as Dict[str, int] using register_special_tokens()
+       Example: register_special_tokens({"<|endoftext|>": 276})
+    
+    3. During Encoding: Control behavior with allowed_special_tokens parameter:
+       - "all": Encode special tokens as single token IDs
+       - "none": Treat special tokens as regular text (apply BPE)
+       - "none_raise": Raise ValueError if special tokens found in text
 
 Tokenizer save and load:
     - save(prefix): Saves tokenizer to two files:
@@ -24,14 +50,23 @@ Tokenizer save and load:
         - prefix.vocab: Human-readable vocabulary for inspection
     - load(model_file): Loads a saved tokenizer from .model file
 
-Components:
-    - get_freqs(): Counts frequency of adjacent token pairs
-    - merge(): Replaces all occurrences of a pair with a new token ID
-    - BpeTokenizer: Main class with train(), encode(), decode() methods
+Main Methods:
+    - train(input_file_path, vocab_size, special_tokens, boundary_split_token, num_processes, verbose): 
+        Train BPE tokenizer on input file with optional parallel processing
+    - encode(text, allowed_special_tokens): Convert text to token IDs
+    - decode(ids): Convert token IDs back to text
+    - save(prefix): Save tokenizer to disk
+    - load(model_file): Load tokenizer from disk
+    - register_special_tokens(special_tokens): Register special tokens after training
+    - get_text_chunks(text, special_tokens, verbose): Split text into chunks using regex
 """
 
+import os
+import time
 import unicodedata
-from typing import Dict, List, Tuple
+from collections import Counter
+from multiprocessing import Pool
+from typing import BinaryIO, Dict, List, Tuple, Union
 
 import regex as re
 
@@ -39,22 +74,42 @@ import regex as re
 # Helper Functions
 ########################################################
 
-# find the frequency of each byte pair
-def get_freqs(ids: List[int], freqs: Dict[Tuple[int, int], int] = None) -> Dict[Tuple[int, int], int]:
+# find the frequency of each byte pair in a single sequence (used during encoding)
+def get_freqs(ids: List[int]) -> Dict[Tuple[int, int], int]:
     """
-    Given a list of integers, return a dictionary of counts of consecutive pairs.
-    Example:
-        ids = [1, 2, 3, 1, 2]
-        get_freqs(ids) = {(1, 2): 2, (2, 3): 1, (3, 1): 1}
+    Count all adjacent byte pairs in a single sequence of ids.
+    Used during encoding to find which pairs to merge.
+    
+    Args:
+        ids: List of token IDs
+        
+    Returns:
+        Dictionary mapping byte pairs to their occurrence counts in this sequence
     """
-    if freqs is None:
-        freqs = {}
-    # Count how frequently each adjacent id pair appears
+    pair_freqs = {}
     for pair in zip(ids, ids[1:]):
-        freqs[pair] = freqs.get(pair, 0) + 1
-    return freqs
+        pair_freqs[pair] = pair_freqs.get(pair, 0) + 1
+    return pair_freqs
 
-def merge(ids: List[int], pair: Tuple[int, int], idx: int) -> List[int]:
+# find the frequency of each byte pair across unique id sequences
+def get_ids_freqs(ids_freqs: Dict[Tuple[int, ...], int]) -> Dict[Tuple[int, int], int]:
+    """
+    Count all adjacent byte pairs across unique id sequences, weighted by their frequencies. This is more efficient than counting pairs from every token occurrence.
+    
+    Args:
+        ids_freqs: Dictionary mapping unique id tuples to their occurrence counts
+        
+    Returns:
+        Dictionary mapping byte pairs to their total occurrence counts
+        
+    """
+    pair_freqs = {}
+    for ids, freq in ids_freqs.items():
+        for pair in zip(ids, ids[1:]):
+            pair_freqs[pair] = pair_freqs.get(pair, 0) + freq
+    return pair_freqs
+
+def merge(ids: Union[List[int], Tuple[int, ...]], pair: Tuple[int, int], idx: int) -> Tuple[int, ...]:
     """
     In a list of integers, merge all consecutive occurrences of pair into a new integer idx.
     Example:
@@ -67,14 +122,25 @@ def merge(ids: List[int], pair: Tuple[int, int], idx: int) -> List[int]:
     # Sweep through ids and replace target pairs with merged token
     i = 0
     while i < len(ids):
-        if i<len(ids)-1 and ids[i:i+2] == list(pair):
+        if i < len(ids) - 1 and (ids[i], ids[i + 1]) == pair:
             # When the next two ids match the merge pair, emit the new token
             new_ids.append(idx)
             i += 2
         else:
             new_ids.append(ids[i])
             i += 1
-    return new_ids
+    return tuple(new_ids)
+
+def merge_pair_in_ids_freqs(ids_freqs: Dict[Tuple[int, ...], int], pair: Tuple[int, int], idx: int) -> Dict[Tuple[int, ...], int]:
+    """
+    Merge a specific pair in all unique id sequences and return updated frequencies.
+    This only processes unique id sequences, not every occurrence.
+    """
+    new_ids_freqs = {}
+    for ids, freq in ids_freqs.items():
+        new_ids = merge(ids, pair, idx)
+        new_ids_freqs[new_ids] = freq
+    return new_ids_freqs
 
 # helper functions for .vocab file
 def replace_control_characters(s: str) -> str:
@@ -96,6 +162,110 @@ def render_token(t: bytes) -> str:
     s = replace_control_characters(s)
     return s
 
+def split_text_by_special_tokens(text: str, special_tokens: List[str] = None, verbose=False) -> List[str]:
+    """Split text by special tokens."""
+    assert special_tokens is not None, "special_tokens must be provided"
+    if verbose:
+        print(f"Splitting text by special tokens: {special_tokens}")
+    
+    # Create regex pattern to split by special tokens
+    special_pattern = "(" + "|".join(re.escape(token) for token in special_tokens) + ")"
+
+    # Split text by special tokens, keeping the special tokens in the result
+    text_segments = re.split(special_pattern, text)
+    if verbose:
+        print(f"Total text segments: {len(text_segments):,}")
+    
+    # remove empty '' segments and special tokens segments
+    text_segments = [segment for segment in text_segments if segment and segment not in special_tokens]
+    if verbose:
+        print(f"Total text segments after removing empty and special tokens segments: {len(text_segments):,}")
+    return text_segments
+
+def process_text_chunk(args: Tuple[str, str, List[str]]) -> Dict[Tuple[int, ...], int]:
+    """
+    Process a single text chunk for parallel pre-tokenization during training.
+    This function must be at module level for multiprocessing pickling.
+    
+    Args:
+        args: Tuple of (chunk_text, regex_pattern, special_tokens)
+        
+    Returns:
+        Counter mapping byte tuples to their frequencies in this chunk
+    """
+    chunk_text, regex_pattern, special_tokens = args
+    compiled_pattern = re.compile(regex_pattern)
+    ids_freqs = Counter()
+    
+    # Split by special tokens if provided
+    if special_tokens:
+        special_pattern = "(" + "|".join(re.escape(token) for token in special_tokens) + ")"
+        text_segments = re.split(special_pattern, chunk_text)
+        # Remove empty segments and special tokens
+        text_segments = [segment for segment in text_segments if segment and segment not in special_tokens]
+        
+        # Apply regex pattern to each segment
+        for segment in text_segments:
+            text_chunks = compiled_pattern.findall(segment)
+            for chunk in text_chunks:
+                byte_tuple = tuple(chunk.encode('utf-8'))
+                ids_freqs[byte_tuple] += 1
+    else:
+        # No special tokens - just apply regex pattern
+        text_chunks = compiled_pattern.findall(chunk_text)
+        for chunk in text_chunks:
+            byte_tuple = tuple(chunk.encode('utf-8'))
+            ids_freqs[byte_tuple] += 1
+    
+    return ids_freqs
+
+# taken from https://github.com/stanford-cs336/assignment1-basics/blob/main/cs336_basics/pretokenization_example.py
+def find_chunk_boundaries(
+    file: BinaryIO,
+    desired_num_chunks: int,
+    split_special_token: bytes,
+) -> list[int]:
+    """
+    Chunk the file into parts that can be counted independently.
+    May return fewer chunks if the boundaries end up overlapping.
+    """
+    assert isinstance(split_special_token, bytes), "Must represent special token as a bytestring"
+
+    # Get total file size in bytes
+    file.seek(0, os.SEEK_END)
+    file_size = file.tell()
+    file.seek(0)
+
+    chunk_size = file_size // desired_num_chunks
+
+    # Initial guesses for chunk boundary locations, uniformly spaced
+    # Chunks start on previous index, don't include last index
+    chunk_boundaries = [i * chunk_size for i in range(desired_num_chunks + 1)]
+    chunk_boundaries[-1] = file_size
+
+    mini_chunk_size = 4096  # Read ahead by 4k bytes at a time
+
+    for bi in range(1, len(chunk_boundaries) - 1):
+        initial_position = chunk_boundaries[bi]
+        file.seek(initial_position)  # Start at boundary guess
+        while True:
+            mini_chunk = file.read(mini_chunk_size)  # Read a mini chunk
+
+            # If EOF, this boundary should be at the end of the file
+            if mini_chunk == b"":
+                chunk_boundaries[bi] = file_size
+                break
+
+            # Find the special token in the mini chunk
+            found_at = mini_chunk.find(split_special_token)
+            if found_at != -1:
+                chunk_boundaries[bi] = initial_position + found_at
+                break
+            initial_position += mini_chunk_size
+
+    # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
+    return sorted(set(chunk_boundaries))
+
 ########################################################
 # Main BPE Class
 ########################################################
@@ -109,40 +279,147 @@ class BpeTokenizer:
         self.regex_pattern = GPT2_SPLIT_PATTERN if regex_patterns is None else regex_patterns
         self.compiled_regex_pattern = re.compile(self.regex_pattern) # convert to regular expression object, it is more efficient for reuse
         print(f"Regex pattern: {self.regex_pattern}")
+    
         
-    def train(self, text: str, vocab_size: int, verbose=False):
+    def get_text_chunks(self, text: str, special_tokens: List[str] = None, verbose=False) -> List[str]:
+        """Split text into chunks using the regex pattern."""
+        # Pre-process input text to chunks (list of strings)
+        if verbose:
+            print("Pre-processing input text to chunks...")
+        
+        # If special tokens are provided, split text by them first
+        if special_tokens:
+            text_segments = split_text_by_special_tokens(text, special_tokens, verbose)
+            # Process each segment: apply regex pattern to regular text
+            text_chunks = []
+            for segment in text_segments:
+                    text_chunks.extend(self.compiled_regex_pattern.findall(segment))
+        else:
+            # No special tokens - just apply regex pattern splitting
+            text_chunks = self.compiled_regex_pattern.findall(text)
+        
+        if verbose:
+            print(f"Total text chunks: {len(text_chunks)}")
+            
+        return text_chunks
+    
+    
+    def train(self, input_file_path: str = None, vocab_size: int = 256, special_tokens: List[str] = None, boundary_split_token: str = None, num_processes: int = None, verbose: bool = False):
+        """
+        Train the BPE tokenizer on the given text or file.
+        
+        Args:
+            input_file_path (str): Path to input text file 
+            vocab_size (int): Desired vocabulary size (must be >= 256)
+            special_tokens (List[str]): List of special tokens to exclude from merging (e.g., ["<|endoftext|>"])
+            boundary_split_token (str): Token to split the text into chunks (e.g., "<|endoftext|>")
+            num_processes (int): Number of processes for parallel pre-tokenization (default: 2)
+            verbose (bool): Whether to print training progress
+        """
+        # start time
+        train_start = time.time()
+        
         assert vocab_size >= 256, "Vocab size must be at least 256"
+        assert boundary_split_token is not None, "Boundary split token must be provided, for example, '<|endoftext|>'"
+        
         num_merges = vocab_size - 256
         if verbose:
             print(f"Training BPE tokenizer -> vocab_size: {vocab_size} and num_merges: {num_merges}")
         
-        # pre-process input text to chunks (list of strings)
-        if verbose:
-            print("Pre-processing input text to chunks...")
-        text_chunks = self.compiled_regex_pattern.findall(text)
+        # Pre-tokenization stage
+        pretokenize_start = time.time()
+        if num_processes is not None and num_processes > 1:
+            if verbose:
+                print("Parallel pre-tokenization")
+            # Find chunk boundaries based on special tokens
+            num_processes = min(num_processes, os.cpu_count() // 2)
+            if verbose:
+                print(f"Using {num_processes} processes for parallel pre-tokenization")
+            with open(input_file_path, "rb") as f:
+                boundaries = find_chunk_boundaries(f, num_processes, boundary_split_token.encode("utf-8"))
+            if verbose:
+                print(f"Created {len(boundaries)-1} chunks for processing the {input_file_path}")
+            
+            # Read chunks and prepare for parallel processing
+            chunks_args = []
+            with open(input_file_path, 'rb') as f:
+                for start, end in zip(boundaries[:-1], boundaries[1:]):
+                    f.seek(start)
+                    chunk_text = f.read(end - start).decode("utf-8", errors="ignore")
+                    chunks_args.append((chunk_text, self.regex_pattern, special_tokens))
+                
+            # Process chunks in parallel
+            if verbose:
+                print("Pre-tokenizing chunks in parallel...")
+            
+            with Pool(num_processes) as pool:
+                chunk_results = pool.map(process_text_chunk, chunks_args)
+            
+            # Combine results from all chunks
+            ids_freqs = Counter()
+            for chunk_freq in chunk_results:
+                ids_freqs.update(chunk_freq)
+                
+            if verbose:
+                print(f"Found {len(ids_freqs):,} unique pre-tokens")
+                print(f"Pre-tokenization time: {time.time() - pretokenize_start:.4f} seconds")
+        else:
+            if verbose:
+                print("Sequential pre-tokenization")
+            
+            # Read the input file
+            with open(input_file_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+            
+            text_chunks = self.get_text_chunks(text, special_tokens, verbose)
+            
+            # Convert text chunks to unique id tuples with frequencies
+            if verbose:
+                print("Collapsing corpus to unique pre-token tuples with freqs...")
+            
+            ids_freqs = Counter()
+            for chunk in text_chunks:
+                # Convert each chunk to a tuple of bytes (makes it hashable for Counter)
+                byte_tuple = tuple(chunk.encode('utf-8'))
+                ids_freqs[byte_tuple] += 1
+            
+            if verbose:
+                print(f"Pre-tokenization time: {time.time() - pretokenize_start:.4f} seconds")
+                print(f"Found {len(ids_freqs):,} unique pre-tokens from {len(text_chunks):,} total chunks")
         
-        # convert input text_chunks to list of ints
-        ids = [list(t.encode('utf-8')) for t in text_chunks]
         
         # initialize vocab with single byte representations
         self.vocab = {idx: bytes([idx]) for idx in range(256)}
+        
+        # BPE merges
         for i in range(num_merges):
-            # get frequency of each consecutive pair
-            freqs = {}
-            for chunk_ids in ids:
-                freqs = get_freqs(chunk_ids, freqs)
+            merge_start = time.time()
+            
+            # Count pairs from unique id sequences weighted by their frequencies instead of counting from every token occurrence
+            freqs = get_ids_freqs(ids_freqs)
+            if not freqs:
+                if verbose:
+                    print(f"No more pairs to merge after {i} merges")
+                break
+            
             # find the most frequent pair
             pair = max(freqs, key=freqs.get)
+            
             # mint a new token id
             idx = 256 + i
-            # replace all the occurences of the pair with the new token id
-            ids = [merge(chunk_ids, pair, idx) for chunk_ids in ids]
+            
+            # Merge the pair in unique id sequences only, not all occurrences
+            ids_freqs = merge_pair_in_ids_freqs(ids_freqs, pair, idx)
+            
             # store the merge
             self.vocab[idx] = self.vocab[pair[0]] + self.vocab[pair[1]] # note, here we are concatenating the bytes objects
             self.merges[pair] = idx
+            
             # print the merges
             if verbose:
-                print(f"Merge {i+1} / {num_merges}: {pair} -> {idx} ({self.vocab[idx]} with {freqs[pair]} occurrences)")
+                print(f"Merge {i+1} / {num_merges}: {pair} -> {idx} ({self.vocab[idx]} with {freqs[pair]} occurrences) in {time.time() - merge_start:.4f} s")
+        if verbose:
+            print(f"Training time: {(time.time() - train_start)/60:.2f} mins")
     
     # special tokesn = list of dict {key: string, value: int}
     # replica of minbpe
@@ -168,11 +445,14 @@ class BpeTokenizer:
         # string -> list of ints
         ids = list(text_bytes)
         
-        while len(ids)>=2:
-            # find the pair with the lowest merge index (earliest merge in training)
-            # note: since python3.7, the order of dictionary items is guaranteed to be the same as the order of insertion
-            freqs = get_freqs(ids)
-            pair = min(freqs, key=lambda p: self.merges.get(p, float('inf')))
+        while len(ids) >= 2:
+            # Find the pair with the lowest merge index (earliest merge in training)
+            # Optimization: collect unique pairs first, then find min
+            # This avoids redundant lookups for duplicate pairs
+            # freqs = get_freqs(ids)
+            # pair = min(freqs, key=lambda p: self.merges.get(p, float('inf')))
+            pairs = set(zip(ids, ids[1:]))
+            pair = min(pairs, key=lambda p: self.merges.get(p, float('inf')))
             if pair not in self.merges:
                 break # as nothing left to merge
             idx = self.merges[pair]
@@ -330,8 +610,11 @@ if __name__ == "__main__":
     with open("data/text.txt", "r") as f:
         text = f.read()
     
-    # Train tokenizer
-    tokenizer.train(text, 276, verbose=True)
+    # Train tokenizer with special tokens
+    # Note: We pass special_tokens during training to exclude them from BPE merges
+    special_token_list = ["<|endoftext|>"]
+    tokenizer.train(text, 276, special_tokens=special_token_list, verbose=True)
+    # Register special tokens with their IDs for encoding/decoding
     tokenizer.register_special_tokens({"<|endoftext|>": 276})
     tokenizer.save("data/tok276")
     

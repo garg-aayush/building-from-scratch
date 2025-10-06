@@ -1,0 +1,20 @@
+[package]
+name = "bpe_encode"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "bpe_encode"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "run"
+path = "run.rs"
+
+[dependencies]
+fancy-regex = "0.13"
+pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
+
+[features]
+default = []
+python = ["pyo3"]
