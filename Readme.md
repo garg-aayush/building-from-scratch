@@ -13,7 +13,7 @@ building-from-scratch/
 ## Basic-GPT
 It contains a character-level GPT built incrementally, following Karpathy’s ["Let’s build GPT: from scratch"](https://www.youtube.com/watch?v=kCc8FmEb1nY). The final scaled model reaches ~**1.48** validation loss.
 <p align="center">
-  <img src="basic-gpt/images/loss_curves.png" alt="Basic-GPT training/validation loss curves" width="650">
+  <img src="basic-gpt/images/loss_curves.png" alt="Basic-GPT training/validation loss curves" width="900">
 </p>
 
 [Read more →](basic-gpt/Readme.md)
