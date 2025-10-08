@@ -6,7 +6,8 @@ A hands-on repo where I build language models and related concepts from first pr
 ```
 building-from-scratch/
 ├── basic-gpt/   # Character-level GPT built incrementally; notebooks, scripts
-└── gpt-2/       # GPT‑2 (124M) reproduction + improvements; training runs, notes
+├── gpt-2/       # GPT‑2 (124M) reproduction + improvements; training runs, notes
+└── bpe/         # BPE tokenizer from scratch; training/encoding optimizations, custom tokenizers
 ```
 
 ## Basic-GPT
@@ -33,3 +34,12 @@ I reimplemented GPT‑2 (124M) code from scratch and then further added improvem
 | gpt2-rope | **2.987392** | **0.320155** | Replaced learned embeddings with RoPE |
 
 [Read more →](gpt-2/Readme.md)
+
+## BPE Tokenizer
+I implemented Byte Pair Encoding (BPE) training and inference from scratch. I started with a naive baseline, progressively optimized training (**~50x faster**) and encoding (**3.7x faster with Rust**), then trained custom 16K tokenizers on TinyStoriesV2 (~2.6GB) and FineWeb (~3.3GB) datasets. I also tried to evaluate their impact on GPT-2 pre-training.
+
+<p align="center">
+  <img src="bpe/images/BPE-Summary.png" alt="BPE tokenizer comparison on GPT-2 training" width="900">
+</p>
+
+[Read more →](bpe/Readme.md)

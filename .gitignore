@@ -197,3 +197,14 @@ cython_debug/
 # add wandb and ckpt dir
 wandb/
 ckpt/
+
+# Rust
+# Cargo.lock should be committed for binaries, but not libraries
+# Uncomment if you want to ignore it:
+# Cargo.lock
+# Build artifacts
+**/target/
+*.rs.bk
+
+# Maturin (Rust-Python bindings)
+*.whl
