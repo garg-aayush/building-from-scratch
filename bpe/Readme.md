@@ -83,7 +83,9 @@ Trained custom 16K tokenizers on TinyStoriesV2 (~2.6GB) and FineWeb (~3.3GB) dat
 
 Trained GPT-2 models to compare tokenizer impact on pre-training performance:
 
-![BPB and HellaSwag Accuracy](images/bpe-comparison.png)
+<p align="center">
+  <img src="images/bpe-comparison.png" alt="BPE tokenizer comparison on GPT-2 training" width="600">
+</p>
 
 **Results**: FineWeb tokenizer showed marginally better performance after 5K steps (~2.5B tokens), validating that the custom tokenizer pipeline works correctly end-to-end. Though, would have been interesting to see how it would perform with more steps or larger GPT-2 model.
 
@@ -237,7 +239,9 @@ To ensure fair comparison between the two custom tokenizers (even though they sh
 
 ### Results
 
-![BPB and HellaSwag Accuracy](images/bpe-comparison.png)
+<p align="center">
+  <img src="images/bpe-comparison.png" alt="BPE tokenizer comparison on GPT-2 training" width="600">
+</p>
 
 **Key Observations:**
 
