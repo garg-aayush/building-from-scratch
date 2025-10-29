@@ -21,6 +21,7 @@ class GPTConfig:
     n_layer: int = 12  # number of layers
     n_embd: int = 768  # embedding dimension
     n_head: int = 12  # number of attention heads
+    eos_token_id: int = 50256 # <|endoftext|> token id
 
 
 class CausalSelfAttention(nn.Module):

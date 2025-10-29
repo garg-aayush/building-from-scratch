@@ -7,8 +7,8 @@ from model import GPT
 # Input parameters
 num_samples = 1 # number of samples to generate
 # for greedy decoding keeps it 1 for now as all the samples are the same
-max_new_tokens = 10 # maximum number of new tokens to generate
-start_seq = "Hello, I'm a language model," # start sequence
+max_new_tokens = 500 # maximum number of new tokens to generate
+start_seq = "The following is a short story about a cat:" # start sequence
 device = "cpu" # device to use
 model_name = "gpt2-large" # model name
 seed = 1337 # seed for the random number generator
@@ -39,7 +39,7 @@ model.to(device)
 enc = tiktoken.get_encoding("gpt2")
 
 # ---------------- Encode the start sequence ---------------- #
-tokens = enc.encode(start_seq)  # n tokens (list of integers)
+tokens = enc.encode(start_seq, allowed_special={"<|endoftext|>"})  # n tokens (list of integers)
 x = torch.tensor(tokens, dtype=torch.long, device=device)[None, ...]  # (1, n)
 
 # ---------------- Generate the text ---------------- #
@@ -54,6 +54,10 @@ def generate(model, idx, max_new_tokens):
         idx_next = torch.argmax(logits, dim=-1, keepdim=True)  # (B, 1)
         # append to the sequence
         idx = torch.cat([idx, idx_next], dim=1)
+        # early stopping if the token is the EOS token
+        if idx_next == model.config.eos_token_id:
+            print("EOS token encountered, stopping generation")
+            break
     return idx
 
 # print the generated text
