@@ -14,6 +14,7 @@ max_new_tokens = 50 # maximum number of new tokens to generate
 do_sample = True # Multinomial sampling (True) or greedy decoding (False)
 temperature = 1.0 # temperature for sampling
 top_k = 50 # top-k sampling (num. of highest prob vocab tokens to keep)
+top_p = 0.9 # top-p sampling (cumulative probability threshold)
 start_seq = "The following is a short story about a cat:" # start sequence
 device = "cpu" # device to use
 model_name = "gpt2-large" # model name
@@ -50,7 +51,7 @@ x = torch.tensor(tokens, dtype=torch.long, device=device)[None, ...]  # (1, n)
 
 # ---------------- Generate the text ---------------- #
 @torch.no_grad()
-def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k=None):
+def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k=None, top_p=None):
     # handle temperature close to 0
     if temperature is None or math.isclose(temperature, 0.0):
         print("Warning: Temperature is close to 0, flip do_sample to False")
@@ -77,7 +78,21 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k
                 # topk_probs[:, [-1]] -> (B, 1) instead of topk_probs[:, -1] -> (B,)
                 # topk_probs[:, [-1]] ensures each row of logits is compared elementwise to its own threshold value (topk_probs[i, -1]).
                 logits[logits < topk_probs[:, [-1]]] = -float('inf')
-            # sample from the distribution (multinomial sampling)
+            # top-p sampling
+            if top_p is not None and top_p > 0:
+                # sort the logits
+                sorted_logits, sorted_indices = torch.sort(logits, dim=-1, descending=True)
+                # calculate the cumulative probabilities
+                cum_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+                # create a mask of tokens to remove based on top-p
+                sorted_indices_to_remove = cum_probs > top_p
+                # keep the first token always, similar to huggingface implementation in https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py
+                # this is different from the original nucleus sampling implementation where the token that crosses the threshold is included
+                sorted_indices_to_remove[...,[0]] = False
+                # set all tokens outside the top-p to -inf, thus softmax will set them to 0
+                sorted_logits[sorted_indices_to_remove] = -float('inf')
+                # scatter back to original order using inverse permutation
+                logits = torch.scatter(logits, -1, sorted_indices, sorted_logits)
             probs = F.softmax(logits, dim=-1) # (B, vocab_size)
             idx_next = torch.multinomial(probs, num_samples=1)  # (B, 1)
         else:
@@ -95,7 +110,7 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k
 print("Generated text:\n")
 for _ in range(num_samples):
     y = generate(model, x, max_new_tokens, 
-                 temperature=temperature, do_sample=do_sample, top_k=top_k)
+                 temperature=temperature, do_sample=do_sample, top_k=top_k, top_p=top_p)
     decoded = enc.decode(y[0,:].tolist())
     print(decoded)
     print("-" * 100)
