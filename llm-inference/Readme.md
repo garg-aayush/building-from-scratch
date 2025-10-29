@@ -17,7 +17,10 @@ My starting point is `model.py` from GPT-2 work (commit: `a100995` on branch gpt
     - [x] **Multinomial Sampling**: Add basic sampling option (sample from full distribution)
     - [x] **Temperature Scaling**: Add temperature parameter to control sampling randomness
 
-- [ ] Sampling Strategies I: Top-K and Top-P (nucleus) sampling
+- [-] Sampling Strategies I: Top-K and Top-P (nucleus) sampling
+    - [x] **Top-K Sampling**: Implement top-k filtering (keep only k most likely tokens)
+    - [ ] **Top-P (Nucleus) Sampling**: Implement nucleus sampling (cumulative probability threshold). Support both top-k and top-p sampling together.
+
 - [ ] Add similar guards as in Transformers library: Add repetition penalty, 
 no-repeat-n-gram, stop strings
 

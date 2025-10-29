@@ -13,6 +13,7 @@ num_samples = 1 # number of samples to generate
 max_new_tokens = 50 # maximum number of new tokens to generate
 do_sample = True # Multinomial sampling (True) or greedy decoding (False)
 temperature = 1.0 # temperature for sampling
+top_k = 50 # top-k sampling (num. of highest prob vocab tokens to keep)
 start_seq = "The following is a short story about a cat:" # start sequence
 device = "cpu" # device to use
 model_name = "gpt2-large" # model name
@@ -49,7 +50,7 @@ x = torch.tensor(tokens, dtype=torch.long, device=device)[None, ...]  # (1, n)
 
 # ---------------- Generate the text ---------------- #
 @torch.no_grad()
-def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False):
+def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k=None):
     # handle temperature close to 0
     if temperature is None or math.isclose(temperature, 0.0):
         print("Warning: Temperature is close to 0, flip do_sample to False")
@@ -68,6 +69,14 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False):
                 # shift the logits to [-inf, 1] range for numerical stability
                 logits = logits - logits.max(dim=-1, keepdim=True).values + 1
             logits = logits / temperature
+            # top-k sampling
+            if top_k is not None and top_k > 0:
+                # select the top-k tokens 
+                topk_probs, _ = torch.topk(logits, min(top_k, logits.size(-1)), dim=-1)
+                # set all tokens outside the top-k to -inf, thus softmax will set them to 0
+                # topk_probs[:, [-1]] -> (B, 1) instead of topk_probs[:, -1] -> (B,)
+                # topk_probs[:, [-1]] ensures each row of logits is compared elementwise to its own threshold value (topk_probs[i, -1]).
+                logits[logits < topk_probs[:, [-1]]] = -float('inf')
             # sample from the distribution (multinomial sampling)
             probs = F.softmax(logits, dim=-1) # (B, vocab_size)
             idx_next = torch.multinomial(probs, num_samples=1)  # (B, 1)
@@ -85,7 +94,8 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False):
 # print the generated text
 print("Generated text:\n")
 for _ in range(num_samples):
-    y = generate(model, x, max_new_tokens, temperature, do_sample)
+    y = generate(model, x, max_new_tokens, 
+                 temperature=temperature, do_sample=do_sample, top_k=top_k)
     decoded = enc.decode(y[0,:].tolist())
     print(decoded)
     print("-" * 100)
