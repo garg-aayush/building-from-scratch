@@ -12,7 +12,7 @@ My starting point is `model.py` from GPT-2 work (commit: `a100995` on branch gpt
 ## To Do
 - [-] Basic Inference Implementation
     - [x] **Greedy Decoding**: Implement argmax-based token selection with max_new_tokens parameter
-    - [ ] **EOS Token Handling**: Stop generation when EOS token is encountered
+    - [x] **EOS Token Handling**: Stop generation when EOS token is encountered
     - [ ] **Context Window Management**: Implement sliding window to keep sequence length ≤ block_size
     - [ ] **Multinomial Sampling**: Add basic sampling option (sample from full distribution)
     - [ ] **Temperature Scaling**: Add temperature parameter to control sampling randomness

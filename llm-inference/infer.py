@@ -7,7 +7,7 @@ from model import GPT
 # Input parameters
 num_samples = 1 # number of samples to generate
 # for greedy decoding keeps it 1 for now as all the samples are the same
-max_new_tokens = 500 # maximum number of new tokens to generate
+max_new_tokens = 50 # maximum number of new tokens to generate
 start_seq = "The following is a short story about a cat:" # start sequence
 device = "cpu" # device to use
 model_name = "gpt2-large" # model name
@@ -46,8 +46,10 @@ x = torch.tensor(tokens, dtype=torch.long, device=device)[None, ...]  # (1, n)
 @torch.no_grad()
 def generate(model, idx, max_new_tokens):
     for _ in range(max_new_tokens):
+        # crop the context if it's greater than the block size
+        idx_cond = idx if idx.size(1) <= model.config.block_size else idx[:, -model.config.block_size:]
         # forward the model to get the logits
-        logits, _ = model(idx)  # (B,T,vocab_size)
+        logits, _ = model(idx_cond)  # (B,T,vocab_size) idx_cond: (B,T)
         # logits at last position
         logits = logits[:, -1, :]  # (B, vocab_size)
         # greedy decoding: select the token with the highest probability
