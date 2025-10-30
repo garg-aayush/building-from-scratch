@@ -1,0 +1,136 @@
+
+import math
+
+import tiktoken
+import torch
+import torch.nn.functional as F
+from model import GPT
+
+# -------------------------------------------------------------------------#
+# Input parameters
+num_samples = 1 # number of samples to generate
+# for greedy decoding keeps it 1 for now as all the samples are the same
+max_new_tokens = 50 # maximum number of new tokens to generate
+do_sample = True # Multinomial sampling (True) or greedy decoding (False)
+temperature = 1.0 # temperature for sampling
+top_k = 50 # top-k sampling (num. of highest prob vocab tokens to keep)
+top_p = 0.9 # top-p sampling (cumulative probability threshold)
+start_seq = "The following is a short story about a cat:" # start sequence
+device = "cpu" # device to use
+model_name = "gpt2-large" # model name
+seed = 1337 # seed for the random number generator
+# -------------------------------------------------------------------------#
+
+# ---------------- Initialize the model ---------------- #
+# set the seed
+torch.manual_seed(seed)
+if device == "cuda": 
+    torch.cuda.manual_seed(seed)
+
+# load the model
+model = GPT.from_pretrained(model_name)
+print("Model loaded successfully")
+
+# available device
+if torch.cuda.is_available():
+    device = "cuda"
+elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+    device = "mps"
+print(f"Using device: {device}")
+
+# eval mode and move to appropriate device
+model.eval()
+model.to(device)
+
+# ---------------- Initialize the tokenizer ---------------- #
+enc = tiktoken.get_encoding("gpt2")
+
+# ---------------- Encode the start sequence ---------------- #
+tokens = enc.encode(start_seq, allowed_special={"<|endoftext|>"})  # n tokens (list of integers)
+x = torch.tensor(tokens, dtype=torch.long, device=device)[None, ...]  # (1, n)
+
+# ---------------- Generate the text ---------------- #
+@torch.no_grad()
+def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k=None, top_p=None):
+    
+    # handle temperature close to 0
+    if temperature is None or math.isclose(temperature, 0.0):
+        print("Warning: Temperature is close to 0, flip do_sample to False")
+        do_sample = False
+    
+    # sanity checks
+    if temperature is not None:
+        assert temperature > 0.0, "Temperature must be greater than 0"
+    if top_k is not None:
+        assert isinstance(top_k, int) and top_k > 0, "top_k must be a positive integer"
+    if top_p is not None:
+        assert isinstance(top_p, float) and top_p > 0 and top_p <= 1, "top_p must be a float between 0 and 1"
+    if top_p is not None:
+        assert isinstance(top_p, float), "top_p must be a float"
+    
+    for _ in range(max_new_tokens):
+        # crop the context if it's greater than the block size
+        idx_cond = idx if idx.size(1) <= model.config.block_size else idx[:, -model.config.block_size:]
+    
+        # forward the model to get the logits
+        logits, _ = model(idx_cond)  # (B,T,vocab_size) idx_cond: (B,T)
+    
+        # logits at last position
+        logits = logits[:, -1, :]  # (B, vocab_size)
+    
+        # sample from the distribution or greedy decoding
+        if do_sample:
+            # scale the logits to the temperature
+            if temperature < 0.1:
+                # shift the logits to [-inf, 1] range for numerical stability
+                logits = logits - logits.max(dim=-1, keepdim=True).values + 1
+            logits = logits / temperature
+    
+            # top-k sampling
+            if top_k is not None and top_k > 0:
+                # select the top-k tokens 
+                topk_probs, _ = torch.topk(logits, min(top_k, logits.size(-1)), dim=-1)
+                # set all tokens outside the top-k to -inf, thus softmax will set them to 0
+                # topk_probs[:, [-1]] -> (B, 1) instead of topk_probs[:, -1] -> (B,)
+                # topk_probs[:, [-1]] ensures each row of logits is compared elementwise to its own threshold value (topk_probs[i, -1]).
+                logits[logits < topk_probs[:, [-1]]] = -float('inf')
+    
+            # top-p sampling
+            if top_p is not None and top_p > 0:
+                # sort the logits
+                sorted_logits, sorted_indices = torch.sort(logits, dim=-1, descending=True)
+                # calculate the cumulative probabilities
+                cum_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+                # create a mask of tokens to remove based on top-p
+                sorted_indices_to_remove = cum_probs > top_p
+                # keep the first token always, similar to huggingface implementation in https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py
+                # this is different from the original nucleus sampling implementation where the token that crosses the threshold is included
+                sorted_indices_to_remove[...,[0]] = False
+                # set all tokens outside the top-p to -inf, thus softmax will set them to 0
+                sorted_logits[sorted_indices_to_remove] = -float('inf')
+                # scatter back to original order using inverse permutation
+                logits = torch.scatter(logits, -1, sorted_indices, sorted_logits)
+    
+            probs = F.softmax(logits, dim=-1) # (B, vocab_size)
+            idx_next = torch.multinomial(probs, num_samples=1)  # (B, 1)
+        else:
+            # greedy decoding: select the token with the highest probability
+            idx_next = torch.argmax(logits, dim=-1, keepdim=True)  # (B, 1)
+    
+        # append to the sequence
+        idx = torch.cat([idx, idx_next], dim=1)
+    
+        # early stopping if the token is the EOS token
+        if idx_next == model.config.eos_token_id:
+            print("EOS token encountered, stopping generation")
+            break
+    return idx
+
+# print the generated text
+print("Generated text:\n")
+for _ in range(num_samples):
+    y = generate(model, x, max_new_tokens, 
+                 temperature=temperature, do_sample=do_sample, top_k=top_k, top_p=top_p)
+    decoded = enc.decode(y[0,:].tolist())
+    print(decoded)
+    print("-" * 100)
