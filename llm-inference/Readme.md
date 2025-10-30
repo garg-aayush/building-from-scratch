@@ -22,12 +22,14 @@ My starting point is `model.py` from GPT-2 work (commit: `a100995` on branch gpt
     - [x] **Top-P (Nucleus) Sampling**: Implement nucleus sampling (cumulative probability threshold). Support both top-k and top-p sampling together.
     - [x] **Sanity Checks**: Add sanity checks for temperature, top-k, and top-p.
 
-- [-] Add Penalty Controls
+- [x] Add Penalty Controls
     - [x] **Presence Penalty**: Adjust logits when a token has already appeared
     - [x] **Frequency Penalty**: Scale down logits proportionally to repetition counts
-    - [ ] **Repetition Penalty**: Apply configurable penalty factor akin to Transformers
+    - [x] **Repetition Penalty**: Apply configurable penalty factor akin to Transformers
+    > Note: I have implemented all three penalties in `infer.py`. However, tbh I don't think they work very well with GPT-2 pre-trained models. Maybe I need to play around with them more or maybe they work better with chat-completion and post-trained models. Though, I like the repetition penalty on its own. Most likely, I will stick with multinomial sampling with top-p/top-k as the default recipe.
 
-- [ ] Sampling Strategies II: Beam search comparison (show degeneration)
+- [ ] Sampling Strategies II: Beam search implementation
+    > Note: For now I will not implement beam search it seems too much of a work for now given it is less popular and practical for decoder-only models.
 
 - [ ] Inference Speed Optimization I: Implement KV cache toggle; benchmark speedup
 
@@ -44,3 +46,6 @@ implement)
 2. For the sampling strategies I:
     - [Chip Huyen's blog post on Generation configs](https://huyenchip.com/2023/03/07/llm-inference.html): Great small blog post top understand Top-K and Top-P sampling strategies
     - [Transformers Library Top-K and Top-P sampling implementation](https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py): You can through the `TopPLogitsWrapper` and `TopKLogitsProcessor` to get a feel of how you need to implement the sampling strategies.
+
+3. For the penalty controls:
+    - [Transformers Library Repetition Penalty implementation](https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py): Try to understand the implementation of repetition penalty from `RepetitionPenaltyLogitsProcessor` class.

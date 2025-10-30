@@ -10,7 +10,7 @@ from model import GPT
 # Input parameters
 num_samples = 1 # number of samples to generate
 # for greedy decoding keeps it 1 for now as all the samples are the same
-max_new_tokens = 50 # maximum number of new tokens to generate
+max_new_tokens = 100 # maximum number of new tokens to generate
 do_sample = False # Multinomial sampling (True) or greedy decoding (False)
 temperature = 1.0 # temperature for sampling
 top_k = 50 # top-k sampling (num. of highest prob vocab tokens to keep)
@@ -21,6 +21,9 @@ model_name = "gpt2-large" # model name
 seed = 1337 # seed for the random number generator
 presence_penalty = 0.0 # decreases likelihood of previously seen tokens
 frequency_penalty = 0.0 # decreases likelihood proportionally to usage count
+repetition_penalty = 1.2 # scales logits for seen tokens
+# To penalize and reduce repetition, use `penalty` values above 1.0, where a higher value penalizes more strongly. 
+# To reward and encourage repetition, use `penalty` values between 0.0 and 1.0, where a lower value rewards more strongly.
 # -------------------------------------------------------------------------#
 
 # ---------------- Initialize the model ---------------- #
@@ -54,7 +57,7 @@ x = torch.tensor(tokens, dtype=torch.long, device=device)[None, ...]  # (1, n)
 # ---------------- Generate the text ---------------- #
 @torch.no_grad()
 def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k=None, top_p=None,
-             presence_penalty=0.0, frequency_penalty=0.0):
+             presence_penalty=0.0, frequency_penalty=0.0, repetition_penalty=1.0):
     
     # handle temperature close to 0
     if temperature is None or math.isclose(temperature, 0.0):
@@ -71,7 +74,8 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k
     if top_p is not None:
         assert isinstance(top_p, float), "top_p must be a float"
     assert isinstance(presence_penalty, float) and 0.0 <= presence_penalty <= 1.0, "presence_penalty must be a float between 0 and 1"
-    assert isinstance(frequency_penalty, float) and frequency_penalty >= 0.0 and frequency_penalty <= 1.0, "frequency_penalty must be a non-negative float between 0 and 1"
+    assert isinstance(frequency_penalty, float) and frequency_penalty >= 0.0 and frequency_penalty <= 1.0, "frequency_penalty must be a float between 0 and 1"
+    assert isinstance(repetition_penalty, float), "repetition_penalty must be a float, below <1.0 means penalize repeats, >1.0 means penalize non-repeats"
     
     for _ in range(max_new_tokens):
         # crop the context if it's greater than the block size
@@ -84,14 +88,25 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k
         logits = logits[:, -1, :]  # (B, vocab_size)
     
         # apply penalties before sampling to discourage repeats
-        if presence_penalty > 0.0 or frequency_penalty > 0.0:
+        if presence_penalty > 0.0 or frequency_penalty > 0.0 or repetition_penalty != 1.0:
+            # count the number of times each token has appeared in the sequence
             token_counts = torch.zeros_like(logits)
             # scatter_add_ adds the values in the second tensor to self using the indices in the first tensor
             token_counts.scatter_add_(1, idx, torch.ones_like(idx, dtype=logits.dtype))
+            # apply presence penalty
             if presence_penalty > 0.0:
                 logits = logits - presence_penalty * (token_counts > 0).float()
+            # apply frequency penalty
             if frequency_penalty > 0.0:
                 logits = logits - frequency_penalty * token_counts
+            # apply repetition penalty
+            if repetition_penalty != 1.0:
+                seen_mask = token_counts > 0
+                penalty = torch.full_like(logits, repetition_penalty)
+                positive_mask = seen_mask & (logits > 0)
+                negative_mask = seen_mask & (logits < 0)
+                logits = torch.where(positive_mask, logits / penalty, logits)
+                logits = torch.where(negative_mask, logits * penalty, logits)
 
         # sample from the distribution or greedy decoding
         if do_sample:
@@ -146,7 +161,8 @@ print("Generated text:\n")
 for _ in range(num_samples):
     y = generate(model, x, max_new_tokens, 
                  temperature=temperature, do_sample=do_sample, top_k=top_k, top_p=top_p,
-                 presence_penalty=presence_penalty, frequency_penalty=frequency_penalty)
+                 presence_penalty=presence_penalty, frequency_penalty=frequency_penalty,
+                 repetition_penalty=repetition_penalty)
     decoded = enc.decode(y[0,:].tolist())
     print(decoded)
     print("-" * 100)
