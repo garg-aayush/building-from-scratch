@@ -22,8 +22,10 @@ My starting point is `model.py` from GPT-2 work (commit: `a100995` on branch gpt
     - [x] **Top-P (Nucleus) Sampling**: Implement nucleus sampling (cumulative probability threshold). Support both top-k and top-p sampling together.
     - [x] **Sanity Checks**: Add sanity checks for temperature, top-k, and top-p.
 
-- [ ] Add similar guards as in Transformers library: Add repetition penalty, 
-no-repeat-n-gram, stop strings
+- [-] Add Penalty Controls
+    - [x] **Presence Penalty**: Adjust logits when a token has already appeared
+    - [ ] **Frequency Penalty**: Scale down logits proportionally to repetition counts
+    - [ ] **Repetition Penalty**: Apply configurable penalty factor akin to Transformers
 
 - [ ] Sampling Strategies II: Beam search comparison (show degeneration)
 
