@@ -15,11 +15,7 @@ My starting point is `model.py` from GPT-2 work (commit: `a100995` on branch gpt
     - [x] **EOS Token Handling**: Stop generation when EOS token is encountered
     - [x] **Context Window Management**: Implement sliding window to keep sequence length ≤ block_size
     - [x] **Multinomial Sampling**: Add basic sampling option (sample from full distribution)
-<<<<<<< HEAD
     - [x] **Temperature Scaling**: Add temperature parameter to control sampling randomness
-=======
-    - [ ] **Temperature Scaling**: Add temperature parameter to control sampling randomness
->>>>>>> d141d2f (Basic inference imp: add multinomial sampling)
 
 - [ ] Sampling Strategies I: Top-K and Top-P (nucleus) sampling
 - [ ] Add similar guards as in Transformers library: Add repetition penalty, 
