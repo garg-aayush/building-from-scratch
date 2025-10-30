@@ -17,9 +17,10 @@ My starting point is `model.py` from GPT-2 work (commit: `a100995` on branch gpt
     - [x] **Multinomial Sampling**: Add basic sampling option (sample from full distribution)
     - [x] **Temperature Scaling**: Add temperature parameter to control sampling randomness
 
-- [-] Sampling Strategies I: Top-K and Top-P (nucleus) sampling
+- [x] Sampling Strategies I: Top-K and Top-P (nucleus) sampling
     - [x] **Top-K Sampling**: Implement top-k filtering (keep only k most likely tokens)
     - [x] **Top-P (Nucleus) Sampling**: Implement nucleus sampling (cumulative probability threshold). Support both top-k and top-p sampling together.
+    - [x] **Sanity Checks**: Add sanity checks for temperature, top-k, and top-p.
 
 - [ ] Add similar guards as in Transformers library: Add repetition penalty, 
 no-repeat-n-gram, stop strings
@@ -37,3 +38,7 @@ implement)
     - [Karpathy's nanoGPT - Generate Function](https://github.com/karpathy/nanoGPT/blob/master/model.py): Simple and clean implementation of text generation
     - [HuggingFace Transformers - Generation Utils](https://github.com/huggingface/transformers/blob/main/src/transformers/generation/utils.py): To understand the sampling and temperature scaling logic
     - [HuggingFace LLM Tutorial](https://huggingface.co/docs/transformers/en/llm_tutorial): Great guide on text generation and decoding strategies
+
+2. For the sampling strategies I:
+    - [Chip Huyen's blog post on Generation configs](https://huyenchip.com/2023/03/07/llm-inference.html): Great small blog post top understand Top-K and Top-P sampling strategies
+    - [Transformers Library Top-K and Top-P sampling implementation](https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py): You can through the `TopPLogitsWrapper` and `TopKLogitsProcessor` to get a feel of how you need to implement the sampling strategies.

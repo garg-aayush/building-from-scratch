@@ -52,17 +52,32 @@ x = torch.tensor(tokens, dtype=torch.long, device=device)[None, ...]  # (1, n)
 # ---------------- Generate the text ---------------- #
 @torch.no_grad()
 def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k=None, top_p=None):
+    
     # handle temperature close to 0
     if temperature is None or math.isclose(temperature, 0.0):
         print("Warning: Temperature is close to 0, flip do_sample to False")
         do_sample = False
+    
+    # sanity checks
+    if temperature is not None:
+        assert temperature > 0.0, "Temperature must be greater than 0"
+    if top_k is not None:
+        assert isinstance(top_k, int) and top_k > 0, "top_k must be a positive integer"
+    if top_p is not None:
+        assert isinstance(top_p, float) and top_p > 0 and top_p <= 1, "top_p must be a float between 0 and 1"
+    if top_p is not None:
+        assert isinstance(top_p, float), "top_p must be a float"
+    
     for _ in range(max_new_tokens):
         # crop the context if it's greater than the block size
         idx_cond = idx if idx.size(1) <= model.config.block_size else idx[:, -model.config.block_size:]
+    
         # forward the model to get the logits
         logits, _ = model(idx_cond)  # (B,T,vocab_size) idx_cond: (B,T)
+    
         # logits at last position
         logits = logits[:, -1, :]  # (B, vocab_size)
+    
         # sample from the distribution or greedy decoding
         if do_sample:
             # scale the logits to the temperature
@@ -70,6 +85,7 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k
                 # shift the logits to [-inf, 1] range for numerical stability
                 logits = logits - logits.max(dim=-1, keepdim=True).values + 1
             logits = logits / temperature
+    
             # top-k sampling
             if top_k is not None and top_k > 0:
                 # select the top-k tokens 
@@ -78,6 +94,7 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k
                 # topk_probs[:, [-1]] -> (B, 1) instead of topk_probs[:, -1] -> (B,)
                 # topk_probs[:, [-1]] ensures each row of logits is compared elementwise to its own threshold value (topk_probs[i, -1]).
                 logits[logits < topk_probs[:, [-1]]] = -float('inf')
+    
             # top-p sampling
             if top_p is not None and top_p > 0:
                 # sort the logits
@@ -93,13 +110,16 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k
                 sorted_logits[sorted_indices_to_remove] = -float('inf')
                 # scatter back to original order using inverse permutation
                 logits = torch.scatter(logits, -1, sorted_indices, sorted_logits)
+    
             probs = F.softmax(logits, dim=-1) # (B, vocab_size)
             idx_next = torch.multinomial(probs, num_samples=1)  # (B, 1)
         else:
             # greedy decoding: select the token with the highest probability
             idx_next = torch.argmax(logits, dim=-1, keepdim=True)  # (B, 1)
+    
         # append to the sequence
         idx = torch.cat([idx, idx_next], dim=1)
+    
         # early stopping if the token is the EOS token
         if idx_next == model.config.eos_token_id:
             print("EOS token encountered, stopping generation")
