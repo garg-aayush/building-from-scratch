@@ -17,9 +17,10 @@ top_k = 50 # top-k sampling (num. of highest prob vocab tokens to keep)
 top_p = 0.9 # top-p sampling (cumulative probability threshold)
 start_seq = "The following is a short story about a cat:" # start sequence
 device = "cpu" # device to use
-model_name = "gpt2" # model name
+model_name = "gpt2-large" # model name
 seed = 1337 # seed for the random number generator
 presence_penalty = 0.0 # decreases likelihood of previously seen tokens
+frequency_penalty = 0.0 # decreases likelihood proportionally to usage count
 # -------------------------------------------------------------------------#
 
 # ---------------- Initialize the model ---------------- #
@@ -52,7 +53,8 @@ x = torch.tensor(tokens, dtype=torch.long, device=device)[None, ...]  # (1, n)
 
 # ---------------- Generate the text ---------------- #
 @torch.no_grad()
-def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k=None, top_p=None, presence_penalty=0.0):
+def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k=None, top_p=None,
+             presence_penalty=0.0, frequency_penalty=0.0):
     
     # handle temperature close to 0
     if temperature is None or math.isclose(temperature, 0.0):
@@ -68,7 +70,8 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k
         assert isinstance(top_p, float) and top_p > 0 and top_p <= 1, "top_p must be a float between 0 and 1"
     if top_p is not None:
         assert isinstance(top_p, float), "top_p must be a float"
-    assert isinstance(presence_penalty, float) and presence_penalty >= 0.0 and presence_penalty <= 1.0, "presence_penalty must be a float between 0 and 1"
+    assert isinstance(presence_penalty, float) and 0.0 <= presence_penalty <= 1.0, "presence_penalty must be a float between 0 and 1"
+    assert isinstance(frequency_penalty, float) and frequency_penalty >= 0.0 and frequency_penalty <= 1.0, "frequency_penalty must be a non-negative float between 0 and 1"
     
     for _ in range(max_new_tokens):
         # crop the context if it's greater than the block size
@@ -80,12 +83,15 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k
         # logits at last position
         logits = logits[:, -1, :]  # (B, vocab_size)
     
-        # apply presence penalty before sampling to discourage repeats
-        if presence_penalty > 0.0:
-            token_presence = torch.zeros_like(logits)
+        # apply penalties before sampling to discourage repeats
+        if presence_penalty > 0.0 or frequency_penalty > 0.0:
+            token_counts = torch.zeros_like(logits)
             # scatter_add_ adds the values in the second tensor to self using the indices in the first tensor
-            token_presence.scatter_add_(1, idx, torch.ones_like(idx, dtype=logits.dtype))
-            logits = logits - presence_penalty * (token_presence > 0).float()
+            token_counts.scatter_add_(1, idx, torch.ones_like(idx, dtype=logits.dtype))
+            if presence_penalty > 0.0:
+                logits = logits - presence_penalty * (token_counts > 0).float()
+            if frequency_penalty > 0.0:
+                logits = logits - frequency_penalty * token_counts
 
         # sample from the distribution or greedy decoding
         if do_sample:
@@ -140,7 +146,7 @@ print("Generated text:\n")
 for _ in range(num_samples):
     y = generate(model, x, max_new_tokens, 
                  temperature=temperature, do_sample=do_sample, top_k=top_k, top_p=top_p,
-                 presence_penalty=presence_penalty)
+                 presence_penalty=presence_penalty, frequency_penalty=frequency_penalty)
     decoded = enc.decode(y[0,:].tolist())
     print(decoded)
     print("-" * 100)

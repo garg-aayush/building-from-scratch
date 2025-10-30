@@ -24,7 +24,7 @@ My starting point is `model.py` from GPT-2 work (commit: `a100995` on branch gpt
 
 - [-] Add Penalty Controls
     - [x] **Presence Penalty**: Adjust logits when a token has already appeared
-    - [ ] **Frequency Penalty**: Scale down logits proportionally to repetition counts
+    - [x] **Frequency Penalty**: Scale down logits proportionally to repetition counts
     - [ ] **Repetition Penalty**: Apply configurable penalty factor akin to Transformers
 
 - [ ] Sampling Strategies II: Beam search comparison (show degeneration)
