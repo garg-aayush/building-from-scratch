@@ -38,6 +38,7 @@ class CausalSelfAttention(nn.Module):
         # regularization
         self.n_head = config.n_head
         self.n_embd = config.n_embd
+        self.block_size = config.block_size
         # # causal mask to ensure that attention is only applied to the left in the input sequence
         # self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
         
@@ -57,14 +58,21 @@ class CausalSelfAttention(nn.Module):
         v = rearrange(v, "B T (nh hs) -> B nh T hs", nh=self.n_head)  # (B, nh, T, hs)
 
         # Apply kv cache
+        # pre-allocate memory for the cache
         if use_cache:
             if self.k_cache is None:
-                self.k_cache, self.v_cache = k, v
-            else:
-                self.k_cache, self.v_cache = torch.cat([self.k_cache, k], dim=2), torch.cat([self.v_cache, v], dim=2)
-            k, v = self.k_cache, self.v_cache
+                self.k_cache = torch.zeros(B, self.n_head, self.block_size, self.n_embd // self.n_head, device=q.device)
+                self.v_cache = torch.zeros_like(self.k_cache)
+                self.cur_pos = 0
+            # update the cache
+            self.k_cache[:, :, self.cur_pos:self.cur_pos + T] = k
+            self.v_cache[:, :, self.cur_pos:self.cur_pos + T] = v
+            self.cur_pos += T
+            # get the cached key/value pairs
+            k, v = self.k_cache[:, :, :self.cur_pos], self.v_cache[:, :, :self.cur_pos]
         else:
             self.k_cache, self.v_cache = None, None
+            self.cur_pos = 0
         Tq = q.size(2) # number of query tokens in the forward pass
         Tk = k.size(2) # number of key/value tokens in total (cached + forward pass)
         

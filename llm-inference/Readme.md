@@ -35,6 +35,7 @@ My starting point is `model.py` from GPT-2 work (commit: `a100995` on branch gpt
     - [x] **FP16/BF16 Toggle**: Allow reduced precision inference and compare against FP32
     - [-] **Implement KV Cache**:
         - [x] Write dynamic kv cache implementation 
+        - [x] Pre-allocate memory for the cache (static kv cache)
     - [ ] **Variable-Length Batching**: Add left-padding with EOS token plus attention masks
 - [ ] Inference Speed Optimization II: Draft-verify speculative decoding (Try to 
 implement)
