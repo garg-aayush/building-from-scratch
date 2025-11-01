@@ -1,5 +1,6 @@
 
 import math
+from contextlib import nullcontext
 
 import tiktoken
 import torch
@@ -11,22 +12,39 @@ from model import GPT
 num_samples = 1 # number of samples to generate
 # for greedy decoding keeps it 1 for now as all the samples are the same
 max_new_tokens = 100 # maximum number of new tokens to generate
-do_sample = False # Multinomial sampling (True) or greedy decoding (False)
+do_sample = True # Multinomial sampling (True) or greedy decoding (False)
 temperature = 1.0 # temperature for sampling
 top_k = 50 # top-k sampling (num. of highest prob vocab tokens to keep)
 top_p = 0.9 # top-p sampling (cumulative probability threshold)
 start_seq = "The following is a short story about a cat:" # start sequence
-device = "cpu" # device to use
+device = "cuda" # device to use
+dtype = "float16" # "float16" or "bfloat16" or "float32"
 model_name = "gpt2-large" # model name
 seed = 1337 # seed for the random number generator
 presence_penalty = 0.0 # decreases likelihood of previously seen tokens
 frequency_penalty = 0.0 # decreases likelihood proportionally to usage count
-repetition_penalty = 1.2 # scales logits for seen tokens
+repetition_penalty = 1.0 # scales logits for seen tokens
 # To penalize and reduce repetition, use `penalty` values above 1.0, where a higher value penalizes more strongly. 
 # To reward and encourage repetition, use `penalty` values between 0.0 and 1.0, where a lower value rewards more strongly.
 # -------------------------------------------------------------------------#
 
 # ---------------- Initialize the model ---------------- #
+# available device
+if torch.cuda.is_available():
+    device = "cuda"
+elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+    device = "mps"
+
+# check if the device supports the dtype
+if device == "cuda" and dtype == "bfloat16" and not torch.cuda.is_bf16_supported():
+    dtype = "float16"
+    print("Warning: bfloat16 is not supported on this device, using float16 instead")
+
+# set the inference precision
+pdtype = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}[dtype]
+ctx = nullcontext() if device == "cpu" or device == "mps" else torch.amp.autocast(device_type=device, dtype=pdtype)
+print(f"Using device: {device} and dtype: {dtype} with context: {ctx}")
+
 # set the seed
 torch.manual_seed(seed)
 if device == "cuda": 
@@ -36,12 +54,6 @@ if device == "cuda":
 model = GPT.from_pretrained(model_name)
 print("Model loaded successfully")
 
-# available device
-if torch.cuda.is_available():
-    device = "cuda"
-elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-    device = "mps"
-print(f"Using device: {device}")
 
 # eval mode and move to appropriate device
 model.eval()
@@ -75,7 +87,7 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k
         assert isinstance(top_p, float), "top_p must be a float"
     assert isinstance(presence_penalty, float) and 0.0 <= presence_penalty <= 1.0, "presence_penalty must be a float between 0 and 1"
     assert isinstance(frequency_penalty, float) and frequency_penalty >= 0.0 and frequency_penalty <= 1.0, "frequency_penalty must be a float between 0 and 1"
-    assert isinstance(repetition_penalty, float), "repetition_penalty must be a float, below <1.0 means penalize repeats, >1.0 means penalize non-repeats"
+    assert isinstance(repetition_penalty, float) and repetition_penalty > 0.0, "repetition_penalty must be a float and greater than 0, below <1.0 means penalize repeats, >1.0 means penalize non-repeats"
     
     for _ in range(max_new_tokens):
         # crop the context if it's greater than the block size
@@ -158,11 +170,12 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k
 
 # print the generated text
 print("Generated text:\n")
-for _ in range(num_samples):
-    y = generate(model, x, max_new_tokens, 
-                 temperature=temperature, do_sample=do_sample, top_k=top_k, top_p=top_p,
-                 presence_penalty=presence_penalty, frequency_penalty=frequency_penalty,
-                 repetition_penalty=repetition_penalty)
-    decoded = enc.decode(y[0,:].tolist())
-    print(decoded)
-    print("-" * 100)
+with ctx:
+    for _ in range(num_samples):
+        y = generate(model, x, max_new_tokens, 
+                    temperature=temperature, do_sample=do_sample, top_k=top_k, top_p=top_p,
+                    presence_penalty=presence_penalty, frequency_penalty=frequency_penalty,
+                    repetition_penalty=repetition_penalty)
+        decoded = enc.decode(y[0,:].tolist())
+        print(decoded)
+        print("-" * 100)
