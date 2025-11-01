@@ -1,5 +1,6 @@
 
 import math
+import time
 from contextlib import nullcontext
 
 import tiktoken
@@ -11,14 +12,15 @@ from model import GPT
 # Input parameters
 num_samples = 1 # number of samples to generate
 # for greedy decoding keeps it 1 for now as all the samples are the same
-max_new_tokens = 100 # maximum number of new tokens to generate
+max_new_tokens = 200 # maximum number of new tokens to generate
 do_sample = True # Multinomial sampling (True) or greedy decoding (False)
 temperature = 1.0 # temperature for sampling
 top_k = 50 # top-k sampling (num. of highest prob vocab tokens to keep)
 top_p = 0.9 # top-p sampling (cumulative probability threshold)
 start_seq = "The following is a short story about a cat:" # start sequence
 device = "cuda" # device to use
-dtype = "float16" # "float16" or "bfloat16" or "float32"
+dtype = "float32" # "float16" or "bfloat16" or "float32"
+use_cache = True # use KV cache
 model_name = "gpt2-large" # model name
 seed = 1337 # seed for the random number generator
 presence_penalty = 0.0 # decreases likelihood of previously seen tokens
@@ -68,8 +70,8 @@ x = torch.tensor(tokens, dtype=torch.long, device=device)[None, ...]  # (1, n)
 
 # ---------------- Generate the text ---------------- #
 @torch.no_grad()
-def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k=None, top_p=None,
-             presence_penalty=0.0, frequency_penalty=0.0, repetition_penalty=1.0):
+def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False,
+             top_k=None, top_p=None, use_cache=True, presence_penalty=0.0, frequency_penalty=0.0, repetition_penalty=1.0):
     
     # handle temperature close to 0
     if temperature is None or math.isclose(temperature, 0.0):
@@ -89,12 +91,21 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k
     assert isinstance(frequency_penalty, float) and frequency_penalty >= 0.0 and frequency_penalty <= 1.0, "frequency_penalty must be a float between 0 and 1"
     assert isinstance(repetition_penalty, float) and repetition_penalty > 0.0, "repetition_penalty must be a float and greater than 0, below <1.0 means penalize repeats, >1.0 means penalize non-repeats"
     
-    for _ in range(max_new_tokens):
-        # crop the context if it's greater than the block size
-        idx_cond = idx if idx.size(1) <= model.config.block_size else idx[:, -model.config.block_size:]
+    # clear KV cache before starting generation
+    if use_cache:
+        model.clear_kv_cache()
+    
+    for i in range(max_new_tokens):
+        # With KV cache: only pass new tokens after prefill
+        if use_cache and i > 0:
+            # Only pass the last token (just generated)
+            idx_cond = idx[:, -1:]
+        else:
+            # First pass (prefill) or no cache: pass full context (cropped if needed)
+            idx_cond = idx if idx.size(1) <= model.config.block_size else idx[:, -model.config.block_size:]
     
         # forward the model to get the logits
-        logits, _ = model(idx_cond)  # (B,T,vocab_size) idx_cond: (B,T)
+        logits, _ = model(idx_cond, use_cache=use_cache)  # (B,T,vocab_size) idx_cond: (B,T)
     
         # logits at last position
         logits = logits[:, -1, :]  # (B, vocab_size)
@@ -169,13 +180,30 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k
     return idx
 
 # print the generated text
-print("Generated text:\n")
+print("Generated text:\n"+ "-" * 100)
 with ctx:
     for _ in range(num_samples):
+        start_time = time.time()
         y = generate(model, x, max_new_tokens, 
-                    temperature=temperature, do_sample=do_sample, top_k=top_k, top_p=top_p,
+                    temperature=temperature, do_sample=do_sample, top_k=top_k, top_p=top_p, use_cache=use_cache,
                     presence_penalty=presence_penalty, frequency_penalty=frequency_penalty,
                     repetition_penalty=repetition_penalty)
+        
+        # Synchronize CUDA if using GPU to get accurate timing
+        if device == "cuda":
+            torch.cuda.synchronize()
+        
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        
+        # Calculate tokens generated (excluding the input tokens)
+        num_tokens_generated = y.size(1) - x.size(1)
+        tokens_per_second = num_tokens_generated / elapsed_time if elapsed_time > 0 else 0
+        
         decoded = enc.decode(y[0,:].tolist())
         print(decoded)
+        print("-" * 100)
+        print(f"Tokens generated: {num_tokens_generated}")
+        print(f"Time taken: {elapsed_time:.2f}s")
+        print(f"Tokens/s: {tokens_per_second:.2f}")
         print("-" * 100)

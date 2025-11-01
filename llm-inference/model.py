@@ -38,10 +38,15 @@ class CausalSelfAttention(nn.Module):
         # regularization
         self.n_head = config.n_head
         self.n_embd = config.n_embd
-        # causal mask to ensure that attention is only applied to the left in the input sequence
-        self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
+        # # causal mask to ensure that attention is only applied to the left in the input sequence
+        # self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
+        
+        # for KV-cache
+        # persistent=False means that the buffer is not saved to the state_dict
+        self.register_buffer("k_cache", None, persistent=False)
+        self.register_buffer("v_cache", None, persistent=False)
 
-    def forward(self, x):
+    def forward(self, x, use_cache=False):
         B, T, C = x.size()  # batch size, sequence length, n_embd
         qkv = self.c_attn(x)
         # split into q, k, v, size: (B, T, 3 * n_embd) -> (B, T, n_embd) * 3
@@ -51,6 +56,18 @@ class CausalSelfAttention(nn.Module):
         q = rearrange(q, "B T (nh hs) -> B nh T hs", nh=self.n_head)  # (B, nh, T, hs)
         v = rearrange(v, "B T (nh hs) -> B nh T hs", nh=self.n_head)  # (B, nh, T, hs)
 
+        # Apply kv cache
+        if use_cache:
+            if self.k_cache is None:
+                self.k_cache, self.v_cache = k, v
+            else:
+                self.k_cache, self.v_cache = torch.cat([self.k_cache, k], dim=2), torch.cat([self.v_cache, v], dim=2)
+            k, v = self.k_cache, self.v_cache
+        else:
+            self.k_cache, self.v_cache = None, None
+        Tq = q.size(2) # number of query tokens in the forward pass
+        Tk = k.size(2) # number of key/value tokens in total (cached + forward pass)
+        
         # # attention: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         # att = einsum(q, k, "B nh T1 hs, B nh T2 hs -> B nh T1 T2") * (
         #     1.0 / math.sqrt(k.size(-1))
@@ -59,14 +76,35 @@ class CausalSelfAttention(nn.Module):
         # att = F.softmax(att, dim=-1)
         # # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
         # y = att @ v
-        # use FlashAttention 
-        y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        
+        # If use_cache=False or num_query_tokens == num_key_tokens, use the simple version of FlashAttention
+        if not use_cache or Tq == Tk:
+            y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        # query has to attend to all the keys/values in the cache, is_casual=False as Tq == 1
+        elif Tq == 1:
+            # If there is only one query token, we can use the cached version of FlashAttention
+            # Note, for current inference, this will be used when use_cache=True and is equivalent to else case for Tq == 1
+            y = F.scaled_dot_product_attention(q, k, v, is_causal=False)
+        # when there are multiple query tokens and use_cache=True
+        else:
+            # True = keep, False = mask out
+            attn_mask = torch.zeros((Tq, Tk), dtype=torch.bool, device=q.device)
+            prefix_len = Tk - Tq
+            if prefix_len > 0:
+                attn_mask[:, :prefix_len] = True
+            # apply casual attention
+            attn_mask[:, prefix_len:] = torch.tril(torch.ones((Tq, Tq), dtype=torch.bool, device=q.device))
+            y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
+            
         # re-assemble all head outputs side by side
         y = rearrange(y, "B nh T hs -> B T (nh hs)")
         # output projection
         y = self.c_proj(y)
 
         return y
+    
+    def clear_cache(self):
+        self.k_cache, self.v_cache = None, None
 
 
 class MLP(nn.Module):
@@ -92,10 +130,10 @@ class Block(nn.Module):
         self.ln_2 = nn.LayerNorm(config.n_embd)
         self.mlp = MLP(config)
 
-    def forward(self, x):
+    def forward(self, x, use_cache=False):
         # transformer block: reduce-map operation
         # attention: reduce/communication operation
-        x = x + self.attn(self.ln_1(x))
+        x = x + self.attn(self.ln_1(x), use_cache=use_cache)
         # mlp: map/thinking operation, here individual tokens think about the information they gathered and do not communicate with each other
         x = x + self.mlp(self.ln_2(x))
         return x
@@ -123,6 +161,9 @@ class GPT(nn.Module):
 
         # initialize parameters
         self.apply(self._init_weights)
+        
+        # for kv cache
+        self.current_pos = 0
 
     def _init_weights(self, module):
         # 0.02 is roughly in range of Xavier initialization. As Xavier initialization is 1/sqrt(n_in), so for n_in = [768-1600], the std is ~ 0.02
@@ -137,18 +178,22 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, idx, targets=None):
+    def forward(self, idx, targets=None, use_cache=False):
         # idx: token indices
         B, T = idx.size()
         assert T <= self.config.block_size, f"Cannot forward sequence of length {T}, block size is only {self.config.block_size}"
         # forward the tokens and position embeddings
-        pos = torch.arange(0, T, dtype=torch.long, device=idx.device)  # shape (T)
+        if use_cache:
+            pos = torch.arange(self.current_pos, self.current_pos + T, dtype=torch.long, device=idx.device)  # shape (T)
+            self.current_pos += T
+        else:
+            pos = torch.arange(0, T, dtype=torch.long, device=idx.device)  # shape (T)
         pos_emb = self.transformer.wpe(pos)  # position embeddings (T, n_embd)
         tok_emb = self.transformer.wte(idx)  # token embeddings (B, T, n_embd)
         x = pos_emb + tok_emb
         # forward pass through the transformer
         for block in self.transformer.h:
-            x = block(x)
+            x = block(x, use_cache=use_cache)
         # forward pass through the final layer norm and classifier
         x = self.transformer.ln_f(x)
         # every B,T calculate the logits for what token comes next in the sequence
@@ -160,6 +205,11 @@ class GPT(nn.Module):
             # targets: (B,T) -> (B*T)
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
         return logits, loss
+
+    def clear_kv_cache(self):
+        self.current_pos = 0
+        for block in self.transformer.h:
+            block.attn.clear_cache()
 
     @classmethod
     def from_pretrained(cls, model_type):

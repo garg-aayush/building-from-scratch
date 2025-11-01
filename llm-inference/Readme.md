@@ -32,9 +32,10 @@ My starting point is `model.py` from GPT-2 work (commit: `a100995` on branch gpt
     > Note: For now I will not implement beam search it seems too much of a work for now given it is less popular and practical for decoder-only models.
 
 - [-] Inference Speed Optimization I
-    - [ ] **FP16/BF16 Toggle**: Allow reduced precision inference and compare against FP32
+    - [x] **FP16/BF16 Toggle**: Allow reduced precision inference and compare against FP32
+    - [-] **Implement KV Cache**:
+        - [x] Write dynamic kv cache implementation 
     - [ ] **Variable-Length Batching**: Add left-padding with EOS token plus attention masks
-    - [ ] **KV Cache Benchmark**: Implement optional cache and measure speedup vs baseline
 - [ ] Inference Speed Optimization II: Draft-verify speculative decoding (Try to 
 implement)
 
