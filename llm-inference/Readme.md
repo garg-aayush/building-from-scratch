@@ -31,14 +31,31 @@ My starting point is `model.py` from GPT-2 work (commit: `a100995` on branch gpt
 - [ ] Sampling Strategies II: Beam search implementation
     > Note: For now I will not implement beam search it seems too much of a work for now given it is less popular and practical for decoder-only models.
 
-- [-] Inference Speed Optimization I
+- [x] Inference Speed Optimization I
     - [x] **FP16/BF16 Toggle**: Allow reduced precision inference and compare against FP32
-    - [-] **Implement KV Cache**:
+    - [x] **Implement KV Cache**:
         - [x] Write dynamic kv cache implementation 
         - [x] Pre-allocate memory for the cache (static kv cache)
-    - [ ] **Variable-Length Batching**: Add left-padding with EOS token plus attention masks
+        - [x] Add a fix for max tokens > block_size (use sliding window) to avoid overflow issue
+    - [x] **Variable-Length Batching**: Accept a list of prompts, right-pad with EOS, track per-sample masks, and stop generation per sequence once EOS is reached.
+
 - [ ] Inference Speed Optimization II: Draft-verify speculative decoding (Try to 
 implement)
+
+## Notes 
+
+### Using Variable-Length Batching
+
+- **Variable-length batching is only supported when `use_cache=False`**: 
+    - When `use_cache=True`, the implementation requires all input sequences to have identical token lengths (after tokenization). This means you can either:
+        - Provide a single prompt string
+        - Provide the same prompt repeated multiple times (for generating multiple samples)
+        - Provide a list of prompts with different lengths but same token length after tokenization
+    - If variable-length sequences are detected with `use_cache=True`, the code will turn off the cache and use the normal generation logic.
+
+- **Padding Strategy: Right Padding**
+    - Right padding is used because GPT-2 uses absolute positional embeddings, thus the model ties meaning to specific position indices (0, 1, 2, …). Right-padding preserves this alignment, ensuring tokens always start from the same absolute positions the model saw during pre-training.
+    - If you left-pad, the real tokens get shifted to higher positions — this breaks the learned positional patterns and can degrade performance. It also complicates generation and attention masking.    
 
 ## Resources
 
@@ -53,3 +70,10 @@ implement)
 
 3. For the penalty controls:
     - [Transformers Library Repetition Penalty implementation](https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py): Try to understand the implementation of repetition penalty from `RepetitionPenaltyLogitsProcessor` class.
+
+4. For the inference speed optimization I:
+    - [Sebastian Raschka's Understanding and Coding the KV Cache in LLMs](https://magazine.sebastianraschka.com/p/coding-the-kv-cache-in-llms): Excellent in-depth tutorial on KV cache implementation from scratch with clear explanations and optimizations
+    - [Karpathy's nanochat engine.py](https://github.com/karpathy/nanochat/blob/dfc88334b61a3acaf3ec3e61d415d160214f07e9/nanochat/engine.py): A bit difficult to understand the kv-cache part in one go but still a good reference to refer and get intuition on how to go about implementing it.
+    - [Umar Jamil's KV Cache Explained](https://www.youtube.com/watch?v=80bIUggRJf4): Video walkthrough of KV cache concept
+    - [The KV Cache: Memory Usage in Transformers](https://www.youtube.com/watch?v=80bIUggRJf4): Video walkthrough of KV cache concept
+    

@@ -47,7 +47,7 @@ class CausalSelfAttention(nn.Module):
         self.register_buffer("k_cache", None, persistent=False)
         self.register_buffer("v_cache", None, persistent=False)
 
-    def forward(self, x, use_cache=False):
+    def forward(self, x, use_cache=False, attn_mask_padding=None):
         B, T, C = x.size()  # batch size, sequence length, n_embd
         qkv = self.c_attn(x)
         # split into q, k, v, size: (B, T, 3 * n_embd) -> (B, T, n_embd) * 3
@@ -114,6 +114,12 @@ class CausalSelfAttention(nn.Module):
                 attn_mask[:, :prefix_len] = True
             # apply casual attention
             attn_mask[:, prefix_len:] = torch.tril(torch.ones((Tq, Tq), dtype=torch.bool, device=q.device))
+            
+            if attn_mask_padding is not None and not attn_mask_padding.all():
+                attn_mask = attn_mask.unsqueeze(0).unsqueeze(0)  # (1, 1, Tq, Tk)
+                attn_mask_padding = attn_mask_padding.unsqueeze(1).unsqueeze(2)  # (B, 1, 1, Tk)
+                attn_mask = attn_mask & attn_mask_padding
+            
             y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
             
         # re-assemble all head outputs side by side
@@ -151,10 +157,10 @@ class Block(nn.Module):
         self.ln_2 = nn.LayerNorm(config.n_embd)
         self.mlp = MLP(config)
 
-    def forward(self, x, use_cache=False):
+    def forward(self, x, use_cache=False, attn_mask_padding=None):
         # transformer block: reduce-map operation
         # attention: reduce/communication operation
-        x = x + self.attn(self.ln_1(x), use_cache=use_cache)
+        x = x + self.attn(self.ln_1(x), use_cache=use_cache, attn_mask_padding=attn_mask_padding)
         # mlp: map/thinking operation, here individual tokens think about the information they gathered and do not communicate with each other
         x = x + self.mlp(self.ln_2(x))
         return x
@@ -199,7 +205,7 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, idx, targets=None, use_cache=False):
+    def forward(self, idx, targets=None, use_cache=False, attn_mask_padding=None):
         # idx: token indices
         B, T = idx.size()
         assert T <= self.config.block_size, f"Cannot forward sequence of length {T}, block size is only {self.config.block_size}"
@@ -219,7 +225,7 @@ class GPT(nn.Module):
         x = pos_emb + tok_emb
         # forward pass through the transformer
         for block in self.transformer.h:
-            x = block(x, use_cache=use_cache)
+            x = block(x, use_cache=use_cache, attn_mask_padding=attn_mask_padding)
         # forward pass through the final layer norm and classifier
         x = self.transformer.ln_f(x)
         # every B,T calculate the logits for what token comes next in the sequence
