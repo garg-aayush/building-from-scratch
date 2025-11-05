@@ -64,11 +64,23 @@ class CausalSelfAttention(nn.Module):
                 self.k_cache = torch.zeros(B, self.n_head, self.block_size, self.n_embd // self.n_head, device=q.device)
                 self.v_cache = torch.zeros_like(self.k_cache)
                 self.cur_pos = 0
-            # update the cache
+            
+            # Handle sliding window when cache is full
+            if self.cur_pos + T > self.block_size:
+                overflow = self.cur_pos + T - self.block_size
+                # Shift cache to the left by 'overflow' positions
+                # This discards the oldest 'overflow' tokens
+                self.k_cache[:, :, :-overflow] = self.k_cache[:, :, overflow:].clone()
+                self.v_cache[:, :, :-overflow] = self.v_cache[:, :, overflow:].clone()
+                # Adjust position to account for the shift
+                self.cur_pos = self.block_size - T
+            
+            # Write new k,v at current position
             self.k_cache[:, :, self.cur_pos:self.cur_pos + T] = k
             self.v_cache[:, :, self.cur_pos:self.cur_pos + T] = v
             self.cur_pos += T
-            # get the cached key/value pairs
+            
+            # Return the valid cached portion (always full block_size when in sliding window mode)
             k, v = self.k_cache[:, :, :self.cur_pos], self.v_cache[:, :, :self.cur_pos]
         else:
             self.k_cache, self.v_cache = None, None
@@ -113,6 +125,7 @@ class CausalSelfAttention(nn.Module):
     
     def clear_cache(self):
         self.k_cache, self.v_cache = None, None
+        self.cur_pos = 0
 
 
 class MLP(nn.Module):
@@ -192,6 +205,11 @@ class GPT(nn.Module):
         assert T <= self.config.block_size, f"Cannot forward sequence of length {T}, block size is only {self.config.block_size}"
         # forward the tokens and position embeddings
         if use_cache:
+            # Handle sliding window: when current_pos + T exceeds block_size, adjust position
+            if self.current_pos + T > self.config.block_size:
+                overflow = self.current_pos + T - self.config.block_size
+                self.current_pos = self.config.block_size - T
+
             pos = torch.arange(self.current_pos, self.current_pos + T, dtype=torch.long, device=idx.device)  # shape (T)
             self.current_pos += T
         else:
