@@ -39,8 +39,9 @@ My starting point is `model.py` from GPT-2 work (commit: `a100995` on branch gpt
         - [x] Add a fix for max tokens > block_size (use sliding window) to avoid overflow issue
     - [x] **Variable-Length Batching**: Accept a list of prompts, right-pad with EOS, track per-sample masks, and stop generation per sequence once EOS is reached.
 
-- [ ] Inference Speed Optimization II: Draft-verify speculative decoding (Try to 
-implement)
+- [-] Inference Speed Optimization II: Draft-verify speculative decoding
+    - [x] Implement draft-verify speculative decoding based on the deepmind draft-verify speculative decoding paper
+    - [ ] Benchmark the speculative decoding speedup vs baseline
 
 ## Notes 
 
@@ -76,4 +77,9 @@ implement)
     - [Karpathy's nanochat engine.py](https://github.com/karpathy/nanochat/blob/dfc88334b61a3acaf3ec3e61d415d160214f07e9/nanochat/engine.py): A bit difficult to understand the kv-cache part in one go but still a good reference to refer and get intuition on how to go about implementing it.
     - [Umar Jamil's KV Cache Explained](https://www.youtube.com/watch?v=80bIUggRJf4): Video walkthrough of KV cache concept
     - [The KV Cache: Memory Usage in Transformers](https://www.youtube.com/watch?v=80bIUggRJf4): Video walkthrough of KV cache concept
-    
+
+5. For the speculative decoding (Inference Speed Optimization II):
+    - [DeepMind's Draft-Verify Speculative Decoding Paper](https://arxiv.org/abs/2302.01318): The original paper on speculative decoding, it is a great read to understand the concept and the implementation details.
+    - [Efficient NLP: Speculative Decoding](https://www.youtube.com/watch?v=S-8yr_RibJ4): Really nice Draft-Target Speculative Decoding Intuitive Explanation
+    - [Julian Simon's Optimizing LLM Inference](https://www.youtube.com/watch?v=hMs8VNRy5Ys&t=15s): Introduces Draft-Target, n-gram based, approaches to build draft model including Medusa
+    - [Feifei Bear's LLMSpeculativeSampling](https://github.com/feifeibear/LLMSpeculativeSampling): Implementation of draft-verify speculative decoding
