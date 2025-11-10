@@ -39,11 +39,15 @@ My starting point is `model.py` from GPT-2 work (commit: `a100995` on branch gpt
         - [x] Add a fix for max tokens > block_size (use sliding window) to avoid overflow issue
     - [x] **Variable-Length Batching**: Accept a list of prompts, right-pad with EOS, track per-sample masks, and stop generation per sequence once EOS is reached.
 
-- [-] Inference Speed Optimization II: Draft-verify speculative decoding
+- [x] Inference Speed Optimization II: Draft-verify speculative decoding
     - [x] Implement draft-verify speculative decoding based on the deepmind draft-verify speculative decoding paper
-    - [ ] Benchmark the speculative decoding speedup vs baseline
+    > Note: I have implemented the speculative decoding implementation in `infer_speculative.py` which do not use the KV cache. The idea is to keep it simple and focus on the speculative decoding logic and speedup.
+- [-] Benchmark code
+    - [x] Benchmark the speculative decoding speedup vs baseline
+    > `benchmark_speculative.py` contains the **vibe-coded** benchmarking code and you can find the results in the `benchmark_results` folder.
+    - [ ] Benchmark kv-cache implementation
 
-## Notes 
+## Notes
 
 ### Using Variable-Length Batching
 
@@ -57,6 +61,95 @@ My starting point is `model.py` from GPT-2 work (commit: `a100995` on branch gpt
 - **Padding Strategy: Right Padding**
     - Right padding is used because GPT-2 uses absolute positional embeddings, thus the model ties meaning to specific position indices (0, 1, 2, …). Right-padding preserves this alignment, ensuring tokens always start from the same absolute positions the model saw during pre-training.
     - If you left-pad, the real tokens get shifted to higher positions — this breaks the learned positional patterns and can degrade performance. It also complicates generation and attention masking.    
+
+
+### Speculative Decoding Benchmark Results
+
+I ran a small benchmarking experiment to see whether there is some speedup using speculative decoding for relatively small models like `gpt2-xl` (~1.5B params) and `gpt2-large` (~0.7B params).
+
+**Test Configuration:**
+- GPU: rtx 4090, cuda: 12.8, torch: 2.9.0
+- Models: draft (**gpt2**) → target: **gpt2-large** / **gpt2-xl**
+- tokens/s and acceptance ratio are averaged over 3 runs of 3 prompts with `max_new_tokens=200`.
+
+#### `float16`
+
+<table>
+  <thead>
+    <tr>
+      <th rowspan="2">gamma</th>
+      <th colspan="3" style="text-align: center;"> gpt2-large (target), gpt2 (draft)</th>
+      <th colspan="3" style="text-align: center;"> gpt2-xl (target), gpt2 (draft)</th>
+    </tr>
+    <tr>
+      <th>baseline (tok/s)</th><th>speculative (tok/s)</th><th>speedup</th>
+      <th>baseline (tok/s)</th><th>speculative (tok/s)</th><th>speedup</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>baseline</td><td>184.29</td><td>—</td><td>1.00x</td><td>136.89</td><td>—</td><td>1.00x</td></tr>
+    <tr><td>3</td><td>184.29</td><td>215.59</td><td>1.17x</td><td>136.89</td><td>179.23</td><td>1.31x</td></tr>
+    <tr><td>4</td><td>184.29</td><td>201.97</td><td>1.10x</td><td>136.89</td><td>166.47</td><td>1.22x</td></tr>
+    <tr><td>5</td><td>184.29</td><td>174.17</td><td>0.95x</td><td>136.89</td><td>153.79</td><td>1.12x</td></tr>
+    <tr><td>6</td><td>184.29</td><td>168.94</td><td>0.92x</td><td>136.89</td><td>134.08</td><td>0.98x</td></tr>
+    <tr><td>7</td><td>184.29</td><td>164.97</td><td>0.90x</td><td>136.89</td><td>135.56</td><td>0.99x</td></tr>
+  </tbody>
+</table>
+
+#### `float32`
+<table>
+  <thead>
+    <tr>
+      <th rowspan="2">gamma</th>
+      <th colspan="3" style="text-align: center;"> gpt2-large (target), gpt2 (draft)</th>
+      <th colspan="3" style="text-align: center;"> gpt2-xl (target), gpt2 (draft)</th>
+    </tr>
+    <tr>
+      <th>baseline (tok/s)</th><th>speculative (tok/s)</th><th>speedup</th>
+      <th>baseline (tok/s)</th><th>speculative (tok/s)</th><th>speedup</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>baseline</td><td>106.07</td><td>—</td><td>1.00x</td><td>63.56</td><td>—</td><td>1.00x</td></tr>
+    <tr><td>3</td><td>106.07</td><td>154.74</td><td>1.46x</td><td>63.56</td><td>95.80</td><td>1.51x</td></tr>
+    <tr><td>4</td><td>106.07</td><td>152.52</td><td>1.44x</td><td>63.56</td><td>98.19</td><td>1.54x</td></tr>
+    <tr><td>5</td><td>106.07</td><td>135.28</td><td>1.28x</td><td>63.56</td><td>103.66</td><td>1.63x</td></tr>
+    <tr><td>6</td><td>106.07</td><td>132.22</td><td>1.25x</td><td>63.56</td><td>92.78</td><td>1.46x</td></tr>
+    <tr><td>7</td><td>106.07</td><td>124.97</td><td>1.18x</td><td>63.56</td><td>90.92</td><td>1.43x</td></tr>
+  </tbody>
+</table>
+
+#### `bfloat16`
+<table>
+  <thead>
+    <tr>
+      <th rowspan="2">gamma</th>
+      <th colspan="3" style="text-align: center;"> gpt2-large (target), gpt2 (draft)</th>
+      <th colspan="3" style="text-align: center;"> gpt2-xl (target), gpt2 (draft)</th>
+    </tr>
+    <tr>
+      <th>baseline (tok/s)</th><th>speculative (tok/s)</th><th>speedup</th>
+      <th>baseline (tok/s)</th><th>speculative (tok/s)</th><th>speedup</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>baseline</td><td>179.06</td><td>—</td><td>1.00x</td><td>134.00</td><td>—</td><td>1.00x</td></tr>
+    <tr><td>3</td><td>179.06</td><td>207.12</td><td>1.16x</td><td>134.00</td><td>163.67</td><td>1.22x</td></tr>
+    <tr><td>4</td><td>179.06</td><td>191.35</td><td>1.07x</td><td>134.00</td><td>157.85</td><td>1.18x</td></tr>
+    <tr><td>5</td><td>179.06</td><td>170.26</td><td>0.95x</td><td>134.00</td><td>156.11</td><td>1.17x</td></tr>
+    <tr><td>6</td><td>179.06</td><td>155.20</td><td>0.87x</td><td>134.00</td><td>130.80</td><td>0.98x</td></tr>
+    <tr><td>7</td><td>179.06</td><td>148.57</td><td>0.83x</td><td>134.00</td><td>120.66</td><td>0.90x</td></tr>
+  </tbody>
+</table>
+
+
+#### Key Takeaways
+
+1. I have written a basic speculative decoding implementation using the original draft-verify speculative decoding paper setup without much optimization and it shows 1.1–1.6× speedups on small models like `gpt2-large` and `gpt2-xl` showing the potential of speculative decoding. 
+2. As mentioned in the original DeepMind paper, the speedup scales with the target-to-draft gap. The larger the target-to-draft gap, the higher the payoff. For example, `gpt2-xl` (~2× `gpt2-large`, >10× `gpt2`) achieves consistent speedups up to 1.6× faster decoding as larger models have higher per-token latency, so skipping even a fraction of target calls yields greater relative savings.
+3. Across all settings, gamma = 3/4 yields the best speedups across all precisions and models combinations. This is because at these values the acceptance rate is highest and we see significant speedups.
+4. For `float32` precision, we see the highest relative speedups even though their absolute throughput is lowest. This is because the baseline (non-speculative) `float32` inference is much slower, so speculative decoding removes a larger absolute chunk of compute time. 
+
 
 ## Resources
 
