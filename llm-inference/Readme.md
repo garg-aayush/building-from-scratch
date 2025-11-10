@@ -150,6 +150,76 @@ I ran a small benchmarking experiment to see whether there is some speedup using
 3. Across all settings, gamma = 3/4 yields the best speedups across all precisions and models combinations. This is because at these values the acceptance rate is highest and we see significant speedups.
 4. For `float32` precision, we see the highest relative speedups even though their absolute throughput is lowest. This is because the baseline (non-speculative) `float32` inference is much slower, so speculative decoding removes a larger absolute chunk of compute time. 
 
+### KV Cache Benchmark Results
+
+I also ran a small benchmarking experiment to compare the KV-cache (static sliding window implementation) speedup. Note: the speedup is relative to the baseline without KV cache.
+
+- `bfloat16`
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="2">max. new tokens</th>
+          <th colspan="3" style="text-align: center;">gpt2-large</th>
+          <th colspan="3" style="text-align: center;">gpt2-xl</th>
+        </tr>
+        <tr>
+          <th>baseline (tok/s)</th><th>kv cache (tok/s)</th><th>speedup</th>
+          <th>baseline (tok/s)</th><th>kv cache (tok/s)</th><th>speedup</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>200</td><td>165.31</td><td>155.28</td><td>0.94x</td><td>130.16</td><td>121.85</td><td>0.94x</td></tr>
+        <tr><td>400</td><td>156.98</td><td>153.71</td><td>0.98x</td><td>110.17</td><td>117.19</td><td>1.06x</td></tr>
+        <tr><td>800</td><td>130.82</td><td>161.12</td><td>1.23x</td><td>80.72</td><td>111.27</td><td>1.38x</td></tr>
+      </tbody>
+    </table>
+
+- `float16`
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="2">max. new tokens</th>
+          <th colspan="3" style="text-align: center;">gpt2-large</th>
+          <th colspan="3" style="text-align: center;">gpt2-xl</th>
+        </tr>
+        <tr>
+          <th>baseline (tok/s)</th><th>kv cache (tok/s)</th><th>speedup</th>
+          <th>baseline (tok/s)</th><th>kv cache (tok/s)</th><th>speedup</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>200</td><td>175.85</td><td>160.51</td><td>0.91x</td><td>122.44</td><td>112.20</td><td>0.92x</td></tr>
+        <tr><td>400</td><td>159.03</td><td>149.52</td><td>0.94x</td><td>106.06</td><td>112.14</td><td>1.06x</td></tr>
+        <tr><td>800</td><td>128.57</td><td>169.30</td><td>1.32x</td><td>86.07</td><td>127.12</td><td>1.48x</td></tr>
+      </tbody>
+    </table>
+
+- `float32`
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="2">max. new tokens</th>
+          <th colspan="3" style="text-align: center;">gpt2-large</th>
+          <th colspan="3" style="text-align: center;">gpt2-xl</th>
+        </tr>
+        <tr>
+          <th>baseline (tok/s)</th><th>kv cache (tok/s)</th><th>speedup</th>
+          <th>baseline (tok/s)</th><th>kv cache (tok/s)</th><th>speedup</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>200</td><td>103.48</td><td>174.02</td><td>1.68x</td><td>62.51</td><td>104.41</td><td>1.67x</td></tr>
+        <tr><td>400</td><td>76.61</td><td>163.48</td><td>2.13x</td><td>48.64</td><td>99.89</td><td>2.05x</td></tr>
+        <tr><td>800</td><td>53.82</td><td>148.34</td><td>2.76x</td><td>38.09</td><td>93.03</td><td>2.44x</td></tr>
+      </tbody>
+    </table>
+
+#### Key Takeaways
+
+1. You can see that for short generations, speedups are limited or negative. This is due to the device transfer and communication overheads dominating the runtime. As the generated length grows, reuse increases and you start seeing the benefits of the KV cache.
+2. Like in speculative decoding, the speedups are strongest in `float32` where baseline compute is slowest, so avoiding recomputation yields the largest relative gains. In `bfloat16/float16` case, optimized GPU kernels and lower per-step latency mean KV cache overheads can dominate until sequences are long enough.
+
+I used `benchmark_kv_cache.py` to generate the results and you can find the results in the `benchmark_results` folder.
 
 ## Resources
 
