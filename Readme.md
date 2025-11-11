@@ -5,9 +5,10 @@ A hands-on repo where I build language models and related concepts from first pr
 ## Repo structure
 ```
 building-from-scratch/
-├── basic-gpt/   # Character-level GPT built incrementally; notebooks, scripts
-├── gpt-2/       # GPT‑2 (124M) reproduction + improvements; training runs, notes
-└── bpe/         # BPE tokenizer from scratch; training/encoding optimizations, custom tokenizers
+├── basic-gpt/      # Character-level GPT built incrementally; notebooks, scripts
+├── gpt-2/          # GPT‑2 (124M) reproduction + improvements; training runs, notes
+├── bpe/            # BPE tokenizer from scratch; training/encoding optimizations, custom tokenizers
+└── llm-inference/  # LLM inference from scratch; sampling strategies, KV cache, speculative decoding
 ```
 
 ## Basic-GPT
@@ -43,3 +44,16 @@ I implemented Byte Pair Encoding (BPE) training and inference from scratch. I st
 </p>
 
 [Read more →](bpe/Readme.md)
+
+## LLM Inference
+I built LLM inference from scratch implementing:
+- sampling strategies (greedy, multinomial, top-k, top-p)
+- penalty controls (presence, frequency, repetition)
+- latency optimizations (FP16/BF16, KV cache, variable-length batching, speculative decoding)
+
+| Optimization | Best Speedup (float32) | Best Speedup (float16) |
+|--------------|------------------------|------------------------|
+| KV cache | **2.76×** (gpt2-large, 800 tokens) | **1.48×** (gpt2-xl, 800 tokens) |
+| Speculative decoding | **1.63×** (draft: gpt2 → target: gpt2-xl, gamma=5) | **1.31×** (draft: gpt2 → target: gpt2-xl, gamma=3) |
+
+[Read more →](llm-inference/Readme.md)

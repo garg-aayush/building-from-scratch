@@ -246,11 +246,12 @@ class GPT(nn.Module):
     @classmethod
     def from_pretrained(cls, model_type):
         """Loads pretrained weights from Hugging Face."""
-        assert model_type in {"gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"}
+        assert model_type in {"distilgpt2", "gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"}
         print("loading weights from pretrained gpt: %s" % model_type)
 
         # n_layer, n_head and n_embd are determined from model_type
         config_args = {
+            "distilgpt2": dict(n_layer=6, n_head=12, n_embd=768),  # 82M params
             "gpt2": dict(n_layer=12, n_head=12, n_embd=768),  # 124M params
             "gpt2-medium": dict(n_layer=24, n_head=16, n_embd=1024),  # 350M params
             "gpt2-large": dict(n_layer=36, n_head=20, n_embd=1280),  # 774M params
