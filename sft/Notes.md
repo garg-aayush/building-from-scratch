@@ -1,0 +1,11 @@
+## vLLM Installation
+- Follow the steps mentioned in [vLLM's GPU installation documentation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/)
+- After installation, you can run [vllm_ex_offline_batching.py](play-scripts/vllm_ex_offline_batching.py) script
+- Additional notes:
+    - vLLM by default downloads the model from the Hugging Face Hub
+    - For clarity on parameters, refer to:
+        - `SamplingParams` [documentation](https://docs.vllm.ai/en/latest/api/vllm/#vllm.SamplingParams)
+        - `LLM` [documentation](https://docs.vllm.ai/en/latest/api/vllm/#vllm.LLM)
+    - In case OOMs error during model loading, 
+       - set the `max_model_len` parameter to a smaller value say 2048/4096 (ensures KV cache is not too large).
+       - set `max_num_seqs` parameter to a smaller value say 16/32/64 (ensures batch size is not too large).
