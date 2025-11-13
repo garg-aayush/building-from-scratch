@@ -6,5 +6,8 @@ This directory contains my Supervised Fine-Tuning (SFT) implementation, training
 - [x] Setup vLLM for offline batched inference
     - Fairly simple to install and setup at least with CUDA 12.8
     - Refer to [Notes.md](Notes.md) for more details on the installation and usage
-- [-] Create the training and validation datasets
+- [x] Create the training and validation datasets
     - [x] Create the train and validation splits using the `hiyouga/math12k` dataset
+    - [x] Batch infer the train data for reasoning traces using the `deepseek-v3p1-terminus`
+    - [x] Build the final SFT dataset
+    > Refer to [Notes.md](Notes.md) for more details on the dataset creation pipeline
