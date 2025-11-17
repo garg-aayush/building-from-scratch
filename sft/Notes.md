@@ -42,3 +42,12 @@ The baseline accuracy metrics are stored in `data/baseline_results.jsonl`:
 | :--------------- | :------- |
 | Average Accuracy | 0.0288   |
 | Average Format Accuracy | 0.1438   |
+
+## Train the SFT model
+- As a first task, I wrote and tested the helper functions that we need for SFT training.
+    - `tokenize_prompt_and_output`: Tokenize the prompt and output strings, and construct a mask that is 1 for the response tokens and 0 for the prompt and padding tokens.
+    - `compute_entropy`: Compute the entropy of the next token predictions.
+    - `get_response_log_probs`: Get the response log-probs and the token entropy.
+    - `masked_normalize`: Sum over a dimension and normalize by a constant, considering only the elements with mask value 1.
+    - `sft_microbatch_train_step`: Train a single microbatch of data.
+Basically, I followed the same approach and logic as in the [Assignment 5](https://github.com/stanford-cs336/assignment5-alignment/blob/main/cs336_spring2025_assignment5_alignment.pdf) to write the helper functions.
