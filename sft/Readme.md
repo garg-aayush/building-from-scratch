@@ -11,3 +11,5 @@ This directory contains my Supervised Fine-Tuning (SFT) implementation, training
     - [x] Batch infer the train data for reasoning traces using the `deepseek-v3p1-terminus`
     - [x] Build the final SFT dataset
     > Refer to [Notes.md](Notes.md) for more details on the dataset creation pipeline
+- [x] Run baseline evaluation
+    - [x] Run `Qwen/Qwen2.5-Math-1.5B` on the validation set (val.jsonl) to calculate the baseline accuracy

@@ -31,3 +31,14 @@ I created the three datasets can be used both SFT and GRPO training (in later ex
 Finally, I processed the batch inference outputs to create **sft.jsonl** using the following logic: 
 - I filtered for only the successfully completed responses (where finish_reason was `stop`) and extracted the reasoning traces and answers from the model outputs using regex.
 - Finally, after a bit of cleaning I created the final SFT dataset **sft.jsonl** with the following fields: `problem`, `reasoning_trace`, `extracted_answer`, and `expected_answer`.
+
+## Run baseline evaluation
+
+I ran a baseline evaluation of the `Qwen/Qwen2.5-Math-1.5B` model using the `evaluate.py` script. It uses vLLM for running the model for evaluation and grading logic defined in `utils/drgrpo_grader.py`, following the evaluation criteria outlined in [Assignment 5](https://github.com/stanford-cs336/assignment5-alignment/blob/main/cs336_spring2025_assignment5_alignment.pdf).
+
+The baseline accuracy metrics are stored in `data/baseline_results.jsonl`:
+
+| Metric           | Value    |
+| :--------------- | :------- |
+| Average Accuracy | 0.0288   |
+| Average Format Accuracy | 0.1438   |
