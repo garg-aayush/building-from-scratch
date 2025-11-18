@@ -20,5 +20,5 @@ This directory contains my Supervised Fine-Tuning (SFT) implementation, training
 - [-] Write the SFT training code
     - [x] Write the minimal SFT script (without evaluation and logging)
     > Note: I updated the sft_microbatch_train_step function to support per-token loss calculation. Basically now you can calculate the loss as per-token loss as well as the sum over the sequence dimension. You actually see stable training with per-token loss with acceptable loss and gradient norms. I will talk more about this when I am done with writing the code and is running the experiments.
-    - [ ] Add wandb logging
+    - [x] Add wandb logging
     - [ ] Add evaluation part

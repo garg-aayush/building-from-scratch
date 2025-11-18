@@ -7,6 +7,7 @@ from typing import List
 import numpy as np
 import torch
 import torch.nn.functional as F
+import wandb
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedModel
 from utils.dataloader import SftTrainDataLoaderLite
 from utils.helper_fns import pretty_print
@@ -18,6 +19,8 @@ from utils.post_train import (get_response_log_probs,
 # Input params
 # -------------------------------------------------------------#
 seed = 1337
+wandb_project = "sft"
+wandb_run_name = "test"
 # model
 model_name = "Qwen/Qwen2.5-Math-1.5B"
 dtype = "bfloat16" # "float16" or "bfloat16"
@@ -44,6 +47,9 @@ checkpoint_interval = 10
 input_config = {k: v for k, v in globals().items() if not k.startswith("__") and isinstance(v, (int, float, str, bool, dict))}
 pretty_print(input_config, title="Input config")
 
+# -------------------------------------------------------------#
+# Assertions and other setup
+# -------------------------------------------------------------#
 # assertions to ensure the training can be run
 if not torch.cuda.is_available():
     raise ValueError("CUDA is not available, please use a GPU for training")
@@ -60,6 +66,20 @@ torch.cuda.manual_seed_all(seed)
 
 # use tf32
 torch.set_float32_matmul_precision("high")
+
+# -------------------------------------------------------------#
+# Initialize wandb
+# -------------------------------------------------------------#
+pretty_print(f"Initializing wandb project {wandb_project} and run {wandb_run_name}...", title="Wandb initialization")
+wandb.init(project=wandb_project, name=wandb_run_name, config=input_config)
+
+# x/y-axis for train and eval steps
+wandb.define_metric("step_train")
+wandb.define_metric("step_eval")
+
+# metrics that start with train/ are tied to train_step and vice versa for eval/
+wandb.define_metric("train/*", step_metric="step_train")
+wandb.define_metric("eval/*", step_metric="step_eval")
 
 # -------------------------------------------------------------#
 # # Initialize the tokenizer and model
@@ -113,12 +133,13 @@ for step in range(max_steps):
     
     # accumulate gradients over multiple steps
     loss_accum = 0.0
+    entropy_accum = 0.0
+    total_response_tokens = 0
     for micro_step in range(grad_acc_steps):
         # get a batch of data
         batch = train_data_loader.get_batch()
         # tokenize the batch
-        tokenized_batch = tokenize_prompt_and_output(
-                                                    prompt_strs=[item["prompt"] for item in batch],
+        tokenized_batch = tokenize_prompt_and_output(prompt_strs=[item["prompt"] for item in batch],
                                                     output_strs=[item["response"] for item in batch],
                                                     tokenizer=tokenizer)
         input_ids, labels, response_mask = tokenized_batch["input_ids"].to(device), tokenized_batch["labels"].to(device), tokenized_batch["response_mask"].to(device)
@@ -126,13 +147,19 @@ for step in range(max_steps):
         # calculate the loss
         with torch.autocast(device_type=device_type, dtype=dtype):
             # get the log-probs of the response given the prompt and the token entropy
-            output_logprobs = get_response_log_probs(model, input_ids, labels, False)["log_probs"]
+            # log_probs: (batch_size, sequence_length), token_entropy: (batch_size, sequence_length)
+            response_log_probs = get_response_log_probs(model, input_ids, labels, True)
             # calculate the loss
-            loss, loss_metrics = sft_microbatch_train_step(output_logprobs, response_mask, grad_acc_steps, 
+            loss, loss_metrics = sft_microbatch_train_step(response_log_probs["log_probs"], response_mask, grad_acc_steps, 
                                                            normalize_constant=normalize_constant, per_token_loss=use_per_token_loss)
             # accumulate the loss
             loss_accum += loss.detach()
-    
+        
+        # accumulate the token entropy (only for response tokens)
+        # move it outside the autocast to save memory overhead (minor)
+        entropy_accum += (response_log_probs["token_entropy"] * response_mask).sum().detach()
+        total_response_tokens += response_mask.sum().detach()
+        
     # global norm gradient clipping at 1.0
     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_norm_clip)
     # update the model parameters
@@ -142,8 +169,24 @@ for step in range(max_steps):
     # However, I am using it to avoid OOMs error at same steps due to variable memory usage (variable sequence length per batch), large memory spikes due to gradient accumulation and unfreed memory (memory leaks).
     torch.cuda.empty_cache()
     
+    
+    # calculate average token entropy across all response tokens
+    avg_token_entropy = (entropy_accum / total_response_tokens).item()
     # print the loss metrics
-    print(f"step: {step:0d} | loss: {loss_accum.item()} | avg_respnse_len: {loss_metrics["avg_response_length"]:.2f} | lr: {learning_rate:.4e} | norm: {norm.item():.4f} | dt: {time.time() - t0:.2f}s")
+    dt = time.time() - t0
+    print(f"step: {step:0d} | loss: {loss_accum.item():.4f} | avg_entropy: {avg_token_entropy:.4f} | avg_len: {loss_metrics["avg_response_length"]:.2f} | lr: {learning_rate:.4e} | norm: {norm.item():.4f} | dt: {dt:.2f}s")
+    
+    # log the training metrics to wandb
+    train_log_dict = {
+        "step_train": step,
+        "train/loss": loss_accum.item(),
+        "train/avg_token_entropy": avg_token_entropy,
+        "train/avg_response_length": loss_metrics["avg_response_length"],
+        "train/lr": learning_rate,
+        "train/norm": norm.item(),
+        "train/dt": dt
+    }
+    wandb.log(train_log_dict)
     
     if ((step + 1) % checkpoint_interval == 0) or (step + 1 == max_steps):
         model.save_pretrained(output_dir + f"/checkpoint_{step+1}")
