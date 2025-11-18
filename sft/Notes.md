@@ -32,6 +32,12 @@ Finally, I processed the batch inference outputs to create **sft.jsonl** using t
 - I filtered for only the successfully completed responses (where finish_reason was `stop`) and extracted the reasoning traces and answers from the model outputs using regex.
 - Finally, after a bit of cleaning I created the final SFT dataset **sft.jsonl** with the following fields: `problem`, `reasoning_trace`, `extracted_answer`, and `expected_answer`.
 
+### Update
+- While writing the SFT training scripts, I realized the earlier `deepseek-v3p1-terminus` traces were inadequate in both format and answer quality. I regenerated them in the correct format and with correct answers using the `gpt-oss-120b` model. The updated datasets are:
+  - `data/sft_gpt-oss-120b.jsonl`: 4,836 examples containing both correct and incorrect answers
+  - `data/sft_gpt-oss-120b_filtered.jsonl`: 3,496 examples containing only correct answers
+
+
 ## Run baseline evaluation
 
 I ran a baseline evaluation of the `Qwen/Qwen2.5-Math-1.5B` model using the `evaluate.py` script. It uses vLLM for running the model for evaluation and grading logic defined in `utils/drgrpo_grader.py`, following the evaluation criteria outlined in [Assignment 5](https://github.com/stanford-cs336/assignment5-alignment/blob/main/cs336_spring2025_assignment5_alignment.pdf).

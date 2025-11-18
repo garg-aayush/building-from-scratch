@@ -11,13 +11,11 @@ from pathlib import Path
 
 # Configuration
 INPUT_TRAIN_FILE = '../data/train.jsonl'
-OUTPUT_BATCH_FILE = '../data/train_data_4_batchinference_new.jsonl'
-MODEL_NAME = 'accounts/fireworks/models/deepseek-v3p1-terminus'
+OUTPUT_BATCH_FILE = '../data/train_data_4_batchinference_gpt-oss-120b.jsonl'
+MODEL_NAME = 'accounts/fireworks/models/gpt-oss-120b'
 
 # Prompt prefix for math problems
-PROMPT_PREFIX = (
-    "Please give a short reason and answer the below question. "
-    "Make sure put your final answer within \\boxed{}. \n "
+PROMPT_PREFIX = ( "Please first give a short reason and then answer the below question. Make sure to put your reasoning within <think></think> and the final answer within <answer></answer>.\n\n"
 )
 
 # Inference parameters for batch job (set them on UI)
@@ -29,10 +27,6 @@ INFERENCE_PARAMS = {
     "frequency_penalty": 0,
     "temperature": 0.6
 }
-
-
-
-
 
 def create_batch_inference_payloads(data, limit=None):
     output = []

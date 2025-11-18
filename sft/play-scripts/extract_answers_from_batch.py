@@ -10,15 +10,14 @@ import re
 from pathlib import Path
 
 # Configuration
-BATCH_OUTPUT_FILE = '../data/batch-infer-math-train-outputs.jsonl'
-BATCH_INPUT_FILE = '../data/train_data_4_batchinfer.jsonl'
+BATCH_OUTPUT_FILE = '../data/batch-infer-math-train-outputs_gpt-oss-120b.jsonl'
+BATCH_INPUT_FILE = '../data/train_data_4_batchinference_gpt-oss-120b.jsonl'
 TRAIN_FILE = '../data/train.jsonl'
-OUTPUT_FILE = '../data/sft.jsonl'
+OUTPUT_FILE = '../data/sft_gpt-oss-120b.jsonl'
+OUTPUT_FILE_FILTERED = '../data/sft_gpt-oss-120b_filtered.jsonl'
 
-# Prompt prefix to remove from problem
-PROMPT_PREFIX = (
-    "Please give a short reason and answer the below question. "
-    "Make sure put your final answer within \\boxed{}. \n "
+# Prompt prefix for math problems
+PROMPT_PREFIX = ( "Please first give a short reason and then answer the below question. Make sure to put your reasoning within <think></think> and the final answer within <answer></answer>.\n\n"
 )
 
 def load_data(file_path):
@@ -26,12 +25,11 @@ def load_data(file_path):
         return [json.loads(line) for line in f]
 
 def get_reasoning_trace(response_text):
-    # reasoning trace is the text before the \boxed{}
-    reasoning_trace = re.sub(r'\\boxed{(.*)}', '', response_text)
-    # remove the "\n\n\\[\n\n\\]" from the reasoning trace end if it exists
-    reasoning_trace = re.sub(r'\n\n\\\[\n\n\\\]', '', reasoning_trace)
-    # remove the "\n\\[\n\n\\]" from the reasoning trace start if it exists
-    reasoning_trace = re.sub(r'\n\\\[\n\n\\\]', '', reasoning_trace)
+    # reasoning trace is the text before the <answer>
+    reasoning_trace = re.sub(r'<think>', '', response_text)
+    # update the reasoning trace to replace the </think>\n\n<answer> and </think>\n<answer> with </think> <answer> (helps in grading)
+    reasoning_trace = reasoning_trace.replace('</think>\n\n<answer>', '</think> <answer>')
+    reasoning_trace = reasoning_trace.replace('</think>\n<answer>', '</think> <answer>')
     return reasoning_trace
 
 def main():
@@ -57,11 +55,12 @@ def main():
         custom_id = output['custom_id']
         response_text = output['response']['choices'][0]['message']['content']
         
-        # extracted answer is the text between \boxed{}
-        extracted_answer = re.search(r'\\boxed{(.*)}', response_text)
+        # extracted answer is the text between <answer>
+        extracted_answer = re.search(r'<answer>(.*)</answer>', response_text)
         
         # get the reasoning trace from the response text
         reasoning_trace = get_reasoning_trace(response_text)
+
 
         # now get the problem text as a separate field
         problem = [input_entry for input_entry in input_data if input_entry['custom_id'] == custom_id][0]["body"]["messages"][0]["content"].replace(PROMPT_PREFIX, '')
@@ -90,6 +89,12 @@ def main():
     with open(OUTPUT_FILE, 'w') as f:
         f.write(json.dumps(output_data, indent=2))
     print(f"Saved {len(output_data)} items to {OUTPUT_FILE}")
+    
+    # filter out examples where extracted_answer is not correct
+    output_data = [item for item in output_data if item['extracted_answer'] == item['expected_answer']]
+    with open(OUTPUT_FILE_FILTERED, 'w') as f:
+        f.write(json.dumps(output_data, indent=2))
+    print(f"Saved {len(output_data)} items to {OUTPUT_FILE_FILTERED}")
 
 if __name__ == "__main__":
     main()

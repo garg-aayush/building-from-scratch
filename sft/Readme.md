@@ -16,3 +16,7 @@ This directory contains my Supervised Fine-Tuning (SFT) implementation, training
 - [x] Write all sft helper functions as per [Assignment 5](https://github.com/stanford-cs336/assignment5-alignment/blob/main/cs336_spring2025_assignment5_alignment.pdf)
     - [x] Write and test the following helper functions:
         - `tokenize_prompt_and_output`,`compute_entropy`, `get_response_log_probs`, `masked_normalize`, `sft_microbatch_train_step`
+- [x] Regenerate the SFT training dataset using the `gpt-oss-120b` model 
+- [ ] Write the SFT training code
+- [ ] Make evaluation part of the training loop
+- [ ] Train the Qwen/Qwen2.5-Math-1.5B model on the SFT dataset
