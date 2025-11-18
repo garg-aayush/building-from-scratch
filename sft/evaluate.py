@@ -8,11 +8,12 @@ from vllm import LLM, SamplingParams
 # Input params
 # -------------------------------------------------------------#
 val_file = "data/val.jsonl"
-eval_file = "data/baseline_results.jsonl"
 prompt_template_file = "data/r1_zero.prompt"
 
-# model name
-model_name = "Qwen/Qwen2.5-Math-1.5B"
+checkpoint_num = 40
+checkpoint_dir = "results/filtered_norm_constant"
+eval_file = f"{checkpoint_dir}/val_results_checkpoint_{checkpoint_num}.jsonl"
+model_name = f"{checkpoint_dir}/checkpoint_{checkpoint_num}"
 
 # sampling parameters
 sampling_params = {
@@ -27,7 +28,7 @@ sampling_params = {
 model_params = {
     "model": model_name,
     "max_model_len": 2048,
-    "max_num_seqs": 96
+    "max_num_seqs": 128
 }
 
 # print config keys

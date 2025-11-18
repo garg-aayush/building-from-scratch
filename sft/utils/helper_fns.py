@@ -56,7 +56,7 @@ def evaluate_vllm(
         baseline_result["reward"] = reward
         baseline_result["output"] = output_text
         acc_dict["avg_acc"] += reward["reward"]
-        acc_dict["avg_format_acc"] += reward["format_reward"] if reward["format_reward"] == 1.0 and reward["answer_reward"] == 0.0 else 0.0
+        acc_dict["avg_format_acc"] += reward["format_reward"] if reward["format_reward"] == 1.0 and reward["reward"] == 0.0 else 0.0
        
     total_examples = len(baseline_results)
     for key in acc_dict.keys():
@@ -67,7 +67,5 @@ def evaluate_vllm(
         "results": baseline_results,
         "accuracy": acc_dict
     }
-    with open(eval_file, "w") as f:
-        f.write(json.dumps(baseline_results_with_eval, indent=2))
 
     return baseline_results_with_eval

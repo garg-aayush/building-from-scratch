@@ -2,7 +2,7 @@ from typing import List
 
 import torch
 import torch.nn.functional as F
-from transformers import PreTrainedModel
+from transformers import AutoTokenizer, PreTrainedModel
 
 
 def tokenize_prompt_and_output(prompt_strs: List[str], output_strs: List[str], tokenizer: AutoTokenizer) -> dict[str, torch.Tensor]:
@@ -68,8 +68,9 @@ def compute_entropy(logits: torch.Tensor) -> torch.Tensor:
     # Using logsumexp keeps everything in log-space, so nothing ever overflows or collapses to zero before you take the log.
     # If you do softmax -> log, tiny probs become 0 and log(0) blows up to -inf, destroying the entropy calculation.
     # See https://discuss.pytorch.org/t/justification-for-logsoftmax-being-better-than-log-softmax/140130
-    log_probs = logits - torch.logsumexp(logits, dim=-1, keepdim=True) # (batch_size, sequence_length, vocab_size)
-    return -torch.sum(torch.exp(log_probs) * log_probs, dim=-1) # (batch_size, sequence_length)
+    with torch.no_grad():
+        log_probs = logits - torch.logsumexp(logits, dim=-1, keepdim=True) # (batch_size, sequence_length, vocab_size)
+        return -torch.sum(torch.exp(log_probs) * log_probs, dim=-1) # (batch_size, sequence_length)
 
 
 def get_response_log_probs(
@@ -113,12 +114,21 @@ def sft_microbatch_train_step(
     response_mask: torch.Tensor,
     gradient_accumulation_steps: int,
     normalize_constant: float = 1.0,
+    per_token_loss: bool = False,
 ) -> torch.Tensor:
     """Train a single microbatch of data."""
     # dim=-1 means sum over the last dimension (sequence_length)
     # calculate loss (sum over the sequence dimension) and divide by the gradient accumulation steps
     # mean() is used to average over the batch dimension
-    loss = -masked_normalize(policy_log_probs, response_mask, dim=-1, normalize_constant=normalize_constant).mean() 
+    
+    
+    response_lengths = response_mask.sum(dim=-1)
+    if per_token_loss:
+        # Per-token loss: sum over sequence and divide by response length for each example -> mean over the batch dimension
+        loss = -masked_normalize(policy_log_probs, response_mask, dim=-1, normalize_constant=response_lengths).mean()
+    else:
+        # normalize by a constant (sum over the sequence dimension) -> mean over the batch dimension
+        loss = -masked_normalize(policy_log_probs, response_mask, dim=-1, normalize_constant=normalize_constant).mean()
     
     # adjust the loss by the gradient accumulation steps
     scaled_loss = loss / gradient_accumulation_steps
@@ -126,7 +136,9 @@ def sft_microbatch_train_step(
     # backprop the loss
     scaled_loss.backward()
     
+    # response_mask size: (batch_size, sequence_length), return the avg response length
+    avg_response_length = response_lengths.float().mean().item()
     return scaled_loss, {"loss": loss.item(),
                          "scaled_loss": scaled_loss.item(),
-                         "response_lengths": response_mask.sum(dim=-1),
+                         "avg_response_length": avg_response_length,
                         }
