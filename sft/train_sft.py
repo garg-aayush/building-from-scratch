@@ -30,10 +30,10 @@ from vllm import SamplingParams
 # wandb tracking setup
 seed = 1337
 wandb_project = "sft"
-wandb_run_name = "test"
+wandb_run_name = "run_filtered"
 
 # Model config
-model_name = "Qwen/Qwen2.5-Math-1.5B"
+model_name = "/root/qwen"
 dtype = "bfloat16"  # "float16" or "bfloat16"
 attention_type = "flash_attention_2"
 use_compile = True
@@ -43,28 +43,28 @@ device = "cuda:0"  # please use a GPU for training
 device_type = "cuda" if device.startswith("cuda") else "cpu"
 
 # train and val ta
-train_data_file = "data/sft_gpt-oss-120b_filtered.jsonl"
-prompt_template_file = "data/r1_zero.prompt"
-val_data_file = "data/val.jsonl"
+train_data_file = "/root/data/sft_gpt-oss-120b_filtered.jsonl"
+prompt_template_file = "/root/data/r1_zero.prompt"
+val_data_file = "/root/data/val.jsonl"
 
 # Training hyperparameters
-total_batch_size = 16
+total_batch_size = 128
 micro_batch_size = 2
 grad_acc_steps = total_batch_size // micro_batch_size
 val_batch_size = 4
 learning_rate = 1e-4
-max_steps = 40
+max_steps = 38 # ~1 epoch for 4836 examples (non-filtered), ~28 steps for 3496 examples (filtered)
 grad_norm_clip = 1.0
 use_per_token_loss = True # use per-token loss instead of per-sequence loss
 normalize_constant = 1.0 # normalization constant for the loss
 
 # Checkpointing & logging
-output_dir = "results/filtered"
+output_dir = f"/root/results/{wandb_run_name}"
 checkpoint_interval = 10
 run_intermediate_eval = True # run intermediate evaluation on the validation set
 log_eval_examples_to_jsonl = True
 max_val_examples = 1000  # maximum number of validation examples to evaluate on
-num_val_examples_to_log = 10 # number of validation examples to log to wandb
+num_val_examples_to_log = 20 # number of validation examples to log to wandb
 eval_interval = 10  # evaluate on val dataset
 
 # vLLM config
@@ -299,7 +299,7 @@ if __name__ == '__main__':
     model.train()
 
     # training loop
-    for step in range(max_steps):
+    for step in range(1, max_steps+1):
         # start time
         t0 = time.time()
         
@@ -307,7 +307,7 @@ if __name__ == '__main__':
         optimizer.zero_grad(set_to_none=True)
         
         # evaluate the model on the validation data, track the eval time
-        if run_intermediate_eval and step % eval_interval == 0:
+        if run_intermediate_eval and (step == 1 or step % eval_interval == 0 or step == max_steps):
             t1 = time.time()
             if step != 0:
                 # load the model weights from the checkpoint
@@ -316,6 +316,9 @@ if __name__ == '__main__':
             
             # generate the responses using the vLLM model
             vllm_eval_results = evaluate_vllm(vllm_model, r1_zero_reward_fn, val_prompts, val_baseline_results, vllm_sampling_params_obj)
+            
+            # clear torch cache (to save memory)
+            torch.cuda.empty_cache()
             
             # log the evaluation generations
             log_eval_generations(val_prompts, vllm_eval_results, val_indices_to_log, step, val_examples_table, eval_examples_dir)
@@ -382,7 +385,7 @@ if __name__ == '__main__':
         avg_token_entropy = (entropy_accum / total_response_tokens).item()
         # print the loss metrics
         dt = time.time() - t0
-        print(f"step: {step:0d} | loss: {loss_accum.item():.4f} | avg_entropy: {avg_token_entropy:.4f} | avg_res_len: {loss_metrics['avg_response_length']:.2f} | lr: {learning_rate:.4e} | norm: {norm.item():.4f} | dt: {dt:.2f}s")
+        print(f"step: {step:0d} | loss: {loss_accum.item():.4f} | avg_entropy: {avg_token_entropy:.4f} | lr: {learning_rate:.4e} | norm: {norm.item():.4f} | dt: {dt:.2f}s")
         
         # log the training metrics to wandb
         train_log_dict = {
@@ -395,14 +398,14 @@ if __name__ == '__main__':
         }
         wandb.log(train_log_dict)
         
-        if ((step + 1) % checkpoint_interval == 0) or (step + 1 == max_steps):
-            model.save_pretrained(output_dir + f"/checkpoint_{step+1}")
-            tokenizer.save_pretrained(output_dir + f"/checkpoint_{step+1}")
+        if (step % checkpoint_interval == 0) or (step == max_steps) or (step == max_steps):
+            model.save_pretrained(output_dir + f"/checkpoint_{step}")
+            tokenizer.save_pretrained(output_dir + f"/checkpoint_{step}")
         
         # clear cache
         # Not an ideal solution as it creates overhead for release and re-allocation of memory, we lose the benefit of memory caching.
         # However, I am using it to avoid OOMs error at same steps due to variable memory usage (variable sequence length per batch), large memory spikes due to gradient accumulation and unfreed memory (memory leaks).
-        torch.cuda.empty_cache()
+        if step % eval_interval == 0: torch.cuda.empty_cache()
         
 
 # Save the evaluation examples table
