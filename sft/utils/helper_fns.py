@@ -1,7 +1,10 @@
 import json
+import random
 from typing import Callable, List
 
+from transformers import PreTrainedModel
 from vllm import LLM, SamplingParams
+from vllm.model_executor import set_random_seed as vllm_set_random_seed
 
 
 # -------------------------------------------------------------#
@@ -56,7 +59,7 @@ def evaluate_vllm(
         baseline_result["reward"] = reward
         baseline_result["output"] = output_text
         acc_dict["avg_acc"] += reward["reward"]
-        acc_dict["avg_format_acc"] += reward["format_reward"] if reward["format_reward"] == 1.0 and reward["reward"] == 0.0 else 0.0
+        acc_dict["avg_format_acc"] += reward["format_reward"]
        
     total_examples = len(baseline_results)
     for key in acc_dict.keys():
@@ -69,3 +72,69 @@ def evaluate_vllm(
     }
 
     return baseline_results_with_eval
+
+# -------------------------------------------------------------#
+# functions to initialize the vLLM model and load the policy into the vLLM model during training
+# -------------------------------------------------------------#
+def init_vllm(seed: int, vllm_init_params: dict):
+    """
+    Start the inference process, here we use vLLM to hold a model on
+    the same GPU as the policy.
+    """
+    vllm_set_random_seed(seed)
+    # Monkeypatch from TRL:
+    # https://github.com/huggingface/trl/blob/
+    # 22759c820867c8659d00082ba8cf004e963873c1/trl/trainer/grpo_trainer.py
+    # Patch vLLM to make sure we can place the vLLM model on the desired device
+    # world_size_patch = patch("torch.distributed.get_world_size", return_value=1)
+    # Note: Removed profiling_patch as it's vLLM version-dependent and causes AttributeError in newer versions
+    # with world_size_patch:
+    return LLM(**vllm_init_params)
+
+ def load_policy_into_vllm_instance(policy: PreTrainedModel, llm: LLM):
+    """
+    Copied from https://github.com/huggingface/trl/blob/
+    22759c820867c8659d00082ba8cf004e963873c1/trl/trainer/grpo_trainer.py#L670.
+    """
+    # If the model was torch.compiled, the real module is in ._orig_mod
+    if hasattr(policy, "_orig_mod"):
+        policy_for_state = policy._orig_mod
+    else:
+        policy_for_state = policy
+    state_dict = policy_for_state.state_dict()
+    llm_model = llm.llm_engine.model_executor.driver_worker.model_runner.model
+    llm_model.load_weights(state_dict.items())
+
+
+# -------------------------------------------------------------#
+# Prepare the validation data
+# -------------------------------------------------------------#
+def prepare_val_data(val_data_file: str, prompt_template_file: str, max_val_examples: int=100):
+    """
+    Prepare the validation data.
+    """
+    # read the val data file and prompt template file
+    with open(prompt_template_file, "r") as f:
+        prompt_template = f.read()
+    with open(val_data_file, "r") as f:
+        val_data = json.load(f)
+
+    # sample the validation data
+    total_val_examples = len(val_data)
+    if max_val_examples > total_val_examples:
+        print(f"Warning: max_val_examples={max_val_examples} is greater than the total_val_examples={total_val_examples}, using all {total_val_examples} examples")
+    else:
+        val_data = random.sample(val_data, max_val_examples)
+    
+    # create the list of prompts and baseline results dict
+    prompts, baseline_results = zip(*[
+        (prompt_template.format(question=val_data[i]["problem"]), 
+        {
+            "problem": val_data[i]["problem"], 
+            "expected_answer": val_data[i]["expected_answer"]
+        }
+        )
+        for i in range(len(val_data))
+    ])
+        
+    return list(prompts), baseline_results

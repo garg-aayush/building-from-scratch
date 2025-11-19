@@ -9,6 +9,7 @@
     - In case OOMs error during model loading, 
        - set the `max_model_len` parameter to a smaller value say 2048/4096 (ensures KV cache is not too large).
        - set `max_num_seqs` parameter to a smaller value say 16/32/64 (ensures batch size is not too large).
+       - set `gpu_memory_utilization` parameter to a smaller value say 0.2/0.3... (ensures the model fits in the GPU memory).
 
 ## Dataset Creation Pipeline
 
@@ -50,7 +51,8 @@ The baseline accuracy metrics are stored in `data/baseline_results.jsonl`:
 | Average Format Accuracy | 0.1438   |
 
 ## Train the SFT model
-- As a first task, I wrote and tested the helper functions that we need for SFT training.
+### Write the helper functions first
+As a first task, I wrote and tested the helper functions that we need for SFT training.
     - `tokenize_prompt_and_output`: Tokenize the prompt and output strings, and construct a mask that is 1 for the response tokens and 0 for the prompt and padding tokens.
     - `compute_entropy`: Compute the entropy of the next token predictions.
     - `get_response_log_probs`: Get the response log-probs and the token entropy.
@@ -58,4 +60,26 @@ The baseline accuracy metrics are stored in `data/baseline_results.jsonl`:
     - `sft_microbatch_train_step`: Train a single microbatch of data.
 Basically, I followed the same approach and logic as in the [Assignment 5](https://github.com/stanford-cs336/assignment5-alignment/blob/main/cs336_spring2025_assignment5_alignment.pdf) to write the helper functions.
 
-- I added configurable loss normalization in `sft_microbatch_train_step` via the `per_token_loss` flag to handle variable-length sequences. This is different from the original assignment where we only had the sum over the sequence dimension normalization. Without per-token normalization, longer sequences contribute 3-4× more to gradients than shorter ones, creating high variance in gradient updates (larger seq lens are preferred over shorter ones). Based on my initial tests, per-token loss results in much more stable training with acceptable loss values and consistent gradient norms. I plan to conduct a few ablation experiments comparing both approaches to show that per-token loss is indeed a better approach for this task.
+### Add configurable loss normalization
+I added configurable loss normalization in `sft_microbatch_train_step` via the `per_token_loss` flag to handle variable-length sequences. This is different from the original assignment where we only had the sum over the sequence dimension normalization. Without per-token normalization, longer sequences contribute 3-4× more to gradients than shorter ones, creating high variance in gradient updates (larger seq lens are preferred over shorter ones). Based on my initial tests, per-token loss results in much more stable training with acceptable loss values and consistent gradient norms. I plan to conduct a few ablation experiments comparing both approaches to show that per-token loss is indeed a better approach for this task.
+
+### Workarounds for vLLM Model–Based Intermediate Evaluation
+If you follow the steps in [Assignment 5](https://github.com/stanford-cs336/assignment5-alignment/blob/main/cs336_spring2025_assignment5_alignment.pdf) to run intermediate evaluation, you will run into errors related to vLLM initialization and weight loading. Here’s what I had to change.
+
+#### Use the `colocate` Approach for vLLM Initialization
+- The separate-GPU inference setup described in the assignment no longer works with vLLM 0.7.x and above. The initialization logic has changed, and the assignment’s code is outdated.
+*-The simpler solution is to use the `colocate` initialization strategy, where you create the vLLM model on the same device as the SFT policy model.
+- Make sure the initialization code runs inside a `main` function so that vLLM’s multiprocessing can launch correctly. Also set appropriate values for `gpu_memory_utilization`, `max_model_len`, and `max_num_seqs`.
+
+#### Fixing the `LLMEngine` Missing `model_executor` Attribute
+*-Loading updated model weights into the vLLM instance caused an `LLMEngine` error:
+  `AttributeError: 'LLMEngine' object has no attribute 'model_executor'`.
+- Two solutions work:
+  - Downgrade vLLM to **0.10.2**, or
+  - If using **vLLM 0.11.0**, set the environment variable `VLLM_ENABLE_V1_MULTIPROCESSING=0` at the start of the script.
+
+#### Fixing `ValueError: There is no module or parameter named '_orig_mod' in Qwen2ForCausalLM`
+- This happens when using a compiled model in `sft_microbatch_train_step`.
+- The issue comes from the compiled model’s original weights being referenced under the `_orig_mod` attribute. Make sure to load the policy weights from `_orig_mod` attribute into the vLLM instance in `load_policy_into_vllm_instance`.
+
+Please refer to my following chatGPT [conversation](https://chatgpt.com/share/691d6824-4564-8012-a2c9-587c599c45ec) for more details on the workarounds
