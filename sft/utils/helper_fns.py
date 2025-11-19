@@ -91,7 +91,7 @@ def init_vllm(seed: int, vllm_init_params: dict):
     # with world_size_patch:
     return LLM(**vllm_init_params)
 
- def load_policy_into_vllm_instance(policy: PreTrainedModel, llm: LLM):
+def load_policy_into_vllm_instance(policy: PreTrainedModel, llm: LLM):
     """
     Copied from https://github.com/huggingface/trl/blob/
     22759c820867c8659d00082ba8cf004e963873c1/trl/trainer/grpo_trainer.py#L670.

@@ -24,3 +24,4 @@ This directory contains my Supervised Fine-Tuning (SFT) implementation, training
     - [x] Add vllm-based intermediate evaluation
         - Now, we can evaluate the model on the validation set using the vLLM model. Note, there are two had to make to vLLM model based evaluation to work. Please see [Notes.md](Notes.md) for more details.    
     - [x] log intermediate evaluation examples to jsonl files and to wandb
+    - [x] evaluate the model on the val data and log eval metrics like loss, tok_entropy etc

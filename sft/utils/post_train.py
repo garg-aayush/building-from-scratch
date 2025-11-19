@@ -136,9 +136,27 @@ def sft_microbatch_train_step(
     # backprop the loss
     scaled_loss.backward()
     
-    # response_mask size: (batch_size, sequence_length), return the avg response length
-    avg_response_length = response_lengths.float().mean().item()
     return scaled_loss, {"loss": loss.item(),
                          "scaled_loss": scaled_loss.item(),
-                         "avg_response_length": avg_response_length,
                         }
+
+def sft_eval_step(
+    policy_log_probs: torch.Tensor,
+    response_mask: torch.Tensor,
+    normalize_constant: float = 1.0,
+    per_token_loss: bool = False,
+) -> torch.Tensor:
+    """Evaluate a single microbatch of data."""
+    # dim=-1 means sum over the last dimension (sequence_length)
+    # calculate loss (sum over the sequence dimension) and divide by the gradient accumulation steps
+    # mean() is used to average over the batch dimension
+    
+    response_lengths = response_mask.sum(dim=-1)
+    if per_token_loss:
+        # Per-token loss: sum over sequence and divide by response length for each example -> mean over the batch dimension
+        loss = -masked_normalize(policy_log_probs, response_mask, dim=-1, normalize_constant=response_lengths).mean()
+    else:
+        # normalize by a constant (sum over the sequence dimension) -> mean over the batch dimension
+        loss = -masked_normalize(policy_log_probs, response_mask, dim=-1, normalize_constant=normalize_constant).mean()
+    
+    return loss

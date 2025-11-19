@@ -19,7 +19,7 @@ from utils.drgrpo_grader import r1_zero_reward_fn
 from utils.helper_fns import (evaluate_vllm, init_vllm,
                               load_policy_into_vllm_instance, prepare_val_data,
                               pretty_print)
-from utils.post_train import (get_response_log_probs,
+from utils.post_train import (get_response_log_probs, sft_eval_step,
                               sft_microbatch_train_step,
                               tokenize_prompt_and_output)
 from vllm import SamplingParams
@@ -27,40 +27,51 @@ from vllm import SamplingParams
 # -------------------------------------------------------------#
 # Input params
 # -------------------------------------------------------------#
+# wandb tracking setup
 seed = 1337
 wandb_project = "sft"
 wandb_run_name = "test"
-# model
+
+# Model config
 model_name = "Qwen/Qwen2.5-Math-1.5B"
-dtype = "bfloat16" # "float16" or "bfloat16"
+dtype = "bfloat16"  # "float16" or "bfloat16"
 attention_type = "flash_attention_2"
-device = "cuda:0" # please use a GPU for training
 use_compile = True
-use_per_token_loss = False
-normalize_constant = 1.0
-# training data
+
+# Device & vLLM config
+device = "cuda:0"  # please use a GPU for training
+device_type = "cuda" if device.startswith("cuda") else "cpu"
+
+# train and val ta
 train_data_file = "data/sft_gpt-oss-120b_filtered.jsonl"
 prompt_template_file = "data/r1_zero.prompt"
-total_batch_size = 128
+val_data_file = "data/val.jsonl"
+
+# Training hyperparameters
+total_batch_size = 16
 micro_batch_size = 2
+grad_acc_steps = total_batch_size // micro_batch_size
+val_batch_size = 4
 learning_rate = 1e-4
 max_steps = 40
 grad_norm_clip = 1.0
+use_per_token_loss = True # use per-token loss instead of per-sequence loss
+normalize_constant = 1.0 # normalization constant for the loss
+
+# Checkpointing & logging
 output_dir = "results/filtered"
-grad_acc_steps = total_batch_size // micro_batch_size
-device_type = "cuda" if device.startswith("cuda") else "cpu"
 checkpoint_interval = 10
-run_intermediate_eval = True
+run_intermediate_eval = True # run intermediate evaluation on the validation set
 log_eval_examples_to_jsonl = True
+max_val_examples = 1000  # maximum number of validation examples to evaluate on
+num_val_examples_to_log = 10 # number of validation examples to log to wandb
 eval_interval = 10  # evaluate on val dataset
+
+# vLLM config
+vllm_dtype = "bfloat16"  # vLLM expects string, not torch dtype
 vllm_gpu_memory_utilization = 0.2  # reserve 20% of the GPU memory
 vllm_max_model_len = 2048  # maximum model length
 vllm_max_num_seqs = 128  # maximum number of sequences
-vllm_dtype = "bfloat16"  # vLLM expects string, not torch dtype
-val_data_file = "data/val.jsonl"
-max_val_examples = 1000  # maximum number of validation examples to evaluate on
-num_val_examples_to_log = 10
-# vLLM sampling parameters
 vllm_sampling_params = {
     "temperature": 1.0,
     "top_p": 1.0,
@@ -97,6 +108,63 @@ def log_eval_generations(prompts: List[str], results: List[dict], indices_to_log
         with open(os.path.join(eval_examples_dir, f"eval_examples_step_{step}.jsonl"), "w") as f:
             json.dump(eval_examples, f, indent=2)
 
+@torch.no_grad()
+def evaluate_val_data(model, val_prompts, results, val_batch_size):
+    """Evaluate the model on the validation data and return the avg_loss, avg_token_entropy, avg_correct_response_length, avg_incorrect_response_length"""
+    
+    model.eval()
+    
+    # track different metrics
+    loss_accum = 0.0
+    token_entropy_accum = 0.0
+    correct_response_tokens = 0
+    incorrect_response_tokens = 0
+    num_batches = len(val_prompts) // val_batch_size
+    num_correct = 0
+    num_incorrect = 0
+    
+    for i in range(0, len(val_prompts), val_batch_size):
+        # get the batch of prompts, results, and reward flags
+        batch_prompts = val_prompts[i:i+val_batch_size]
+        batch_results = [res["output"] for res in results[i:i+val_batch_size]]
+        batch_reward_flags = [res["reward"]["reward"] > 0 for res in results[i:i+val_batch_size]]
+        
+        # tokenize the batch
+        tokenized_batch = tokenize_prompt_and_output(prompt_strs=batch_prompts,
+                                                        output_strs=batch_results,
+                                                        tokenizer=tokenizer)
+        input_ids, labels, response_mask = tokenized_batch["input_ids"].to(device), tokenized_batch["labels"].to(device), tokenized_batch["response_mask"].to(device)
+        
+        # calculate the loss and token entropy
+        with torch.autocast(device_type=device_type, dtype=dtype):
+            # log_probs: (batch_size, sequence_length), token_entropy: (batch_size, sequence_length)
+            response_log_probs = get_response_log_probs(model, input_ids, labels, True)
+            # calculate the loss
+            loss = sft_eval_step(response_log_probs["log_probs"], response_mask, normalize_constant, use_per_token_loss)
+        # accumulate the loss and token entropy
+        loss_accum += loss.detach()
+        token_entropy_accum += (response_log_probs["token_entropy"] * response_mask).sum().detach()
+        
+        # split the response token counts into correct and incorrect
+        for j, corr_flag in enumerate(batch_reward_flags):
+            if corr_flag:
+                correct_response_tokens += response_mask[j].sum().detach()
+                num_correct += 1
+            else:
+                incorrect_response_tokens += response_mask[j].sum().detach()
+                num_incorrect += 1
+        
+    # calculate the average loss, token entropy, and response length
+    avg_loss = loss_accum / num_batches
+    avg_token_entropy = token_entropy_accum / (correct_response_tokens + incorrect_response_tokens)
+    avg_correct_response_length = correct_response_tokens / num_correct if num_correct > 0 else 0.0
+    avg_incorrect_response_length = incorrect_response_tokens / num_incorrect if num_incorrect > 0 else 0.0
+    
+    model.train()
+    
+    return avg_loss.item(), avg_token_entropy.item(), avg_correct_response_length.item(), avg_incorrect_response_length.item()
+    
+    
 # -------------------------------------------------------------#
 # Seed and precision setup
 # -------------------------------------------------------------#
@@ -197,7 +265,7 @@ if __name__ == '__main__':
         pretty_print(item, title=f"Example data {i}")
     # reset the data loader pointer
     train_data_loader.reset(only_ptr=True)
-
+    
 
     # -------------------------------------------------------------#
     # Initialize the tokenizer and model
@@ -252,6 +320,9 @@ if __name__ == '__main__':
             # log the evaluation generations
             log_eval_generations(val_prompts, vllm_eval_results, val_indices_to_log, step, val_examples_table, eval_examples_dir)
             
+            # evaluate the model on the validation data and track the avg_loss, avg_token_entropy, avg_response_length (correct responses and incorrect responses)
+            eval_avg_loss, eval_avg_token_entropy, avg_correct_res_len, avg_incorrect_res_len = evaluate_val_data(model, val_prompts, vllm_eval_results["results"], val_batch_size)
+            
             # eval metrics
             dt = time.time() - t1
             eval_avg_format_acc = vllm_eval_results['accuracy']['avg_format_acc']
@@ -261,11 +332,17 @@ if __name__ == '__main__':
                 "step_eval": step,
                 "eval/avg_format_acc": eval_avg_format_acc,
                 "eval/avg_acc": eval_avg_acc,
+                "eval/loss": eval_avg_loss,
+                "eval/avg_token_entropy": eval_avg_token_entropy,
+                "eval/avg_correct_response_length": avg_correct_res_len,
+                "eval/avg_incorrect_response_length": avg_incorrect_res_len,
                 "eval/dt": dt
             })
             # print the evaluation metrics
-            print(f"eval_step: {step:0d} | avg_format_acc: {eval_avg_format_acc:.4f} | avg_acc: {eval_avg_acc:.4f} | dt: {dt:.2f}s")
+            print(f"eval_step: {step:0d} | loss: {eval_avg_loss:.4f} | avg_entropy: {eval_avg_token_entropy:.4f} | avg_correct_res_len: {avg_correct_res_len:.2f} | avg_incorrect_res_len: {avg_incorrect_res_len:.2f} | avg_format_acc: {eval_avg_format_acc:.4f} | avg_acc: {eval_avg_acc:.4f} | dt: {dt:.2f}s")
             
+            # clear torch cache (to save memory)
+            torch.cuda.empty_cache()
         
         loss_accum = 0.0
         entropy_accum = 0.0
@@ -299,24 +376,19 @@ if __name__ == '__main__':
         norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_norm_clip)
         # update the model parameters
         optimizer.step()
-        # clear cache
-        # Not an ideal solution as it creates overhead for release and re-allocation of memory, we lose the benefit of memory caching.
-        # However, I am using it to avoid OOMs error at same steps due to variable memory usage (variable sequence length per batch), large memory spikes due to gradient accumulation and unfreed memory (memory leaks).
-        torch.cuda.empty_cache()
         
         
         # calculate average token entropy across all response tokens
         avg_token_entropy = (entropy_accum / total_response_tokens).item()
         # print the loss metrics
         dt = time.time() - t0
-        print(f"step: {step:0d} | loss: {loss_accum.item():.4f} | avg_entropy: {avg_token_entropy:.4f} | avg_len: {loss_metrics["avg_response_length"]:.2f} | lr: {learning_rate:.4e} | norm: {norm.item():.4f} | dt: {dt:.2f}s")
+        print(f"step: {step:0d} | loss: {loss_accum.item():.4f} | avg_entropy: {avg_token_entropy:.4f} | avg_res_len: {loss_metrics['avg_response_length']:.2f} | lr: {learning_rate:.4e} | norm: {norm.item():.4f} | dt: {dt:.2f}s")
         
         # log the training metrics to wandb
         train_log_dict = {
             "step_train": step,
             "train/loss": loss_accum.item(),
             "train/avg_token_entropy": avg_token_entropy,
-            "train/avg_response_length": loss_metrics["avg_response_length"],
             "train/lr": learning_rate,
             "train/norm": norm.item(),
             "train/dt": dt
@@ -326,6 +398,13 @@ if __name__ == '__main__':
         if ((step + 1) % checkpoint_interval == 0) or (step + 1 == max_steps):
             model.save_pretrained(output_dir + f"/checkpoint_{step+1}")
             tokenizer.save_pretrained(output_dir + f"/checkpoint_{step+1}")
+        
+        # clear cache
+        # Not an ideal solution as it creates overhead for release and re-allocation of memory, we lose the benefit of memory caching.
+        # However, I am using it to avoid OOMs error at same steps due to variable memory usage (variable sequence length per batch), large memory spikes due to gradient accumulation and unfreed memory (memory leaks).
+        torch.cuda.empty_cache()
+        
 
 # Save the evaluation examples table
-wandb.log({"eval/examples": val_examples_table})
+if run_intermediate_eval:
+    wandb.log({"eval/examples": val_examples_table})
