@@ -1,0 +1,5 @@
+All eval datasets taken from https://github.com/stanford-cs336/assignment5-alignment/
+- mmlu: (data/mmlu/test)
+- alpaca_eval: (data/alpaca_eval/)
+- gsm8k: (data/gsm8k/test.jsonl)
+- simple_safety_tests: (data/simple_safety_tests/)
