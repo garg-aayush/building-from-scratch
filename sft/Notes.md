@@ -83,3 +83,27 @@ If you follow the steps in [Assignment 5](https://github.com/stanford-cs336/assi
 - The issue comes from the compiled model’s original weights being referenced under the `_orig_mod` attribute. Make sure to load the policy weights from `_orig_mod` attribute into the vLLM instance in `load_policy_into_vllm_instance`.
 
 Please refer to my following chatGPT [conversation](https://chatgpt.com/share/691d6824-4564-8012-a2c9-587c599c45ec) for more details on the workarounds
+
+## SFT Training Results
+Below are the evaluation results across different SFT training runs:
+
+| Run Name | Reward Accuracy | Format Accuracy |
+| :------- | :-------------- | :-------------- |
+| baseline | 0.0288 | 0.1438 |
+| run_all | 0.4214 | 0.9924 |
+| run_filtered | 0.5204 | 0.9906 |
+| run_filtered-res-len | 0.5106 | 0.9898 |
+| run_filtered-2epoch | 0.5336 | 0.9926 |
+
+**Notes**:
+- Different runs:
+  - All runs except `run_filtered-2epoch` are trained for the same number of steps.
+  - **baseline**: Represents the untrained Qwen2.5-Math-1.5B model accuracy.
+  - **run_all**: Training data is full ~4.8K examples.
+  - **run_filtered**: Training on filtered 4.8K dataset (~3.6K examples) where we removed the reasoning traces that lead to wrong answers.
+  - **run_filtered-res-len**: Uses non-response length normalized loss similar to what's mentioned in the assignment (i.e., no per-token loss).
+  - **run_filtered-2epoch**: Same run as `run_filtered` but trained for 2 epochs.
+- All training runs can be found in the [wandb's sft workspace](https://wandb.ai/garg-aayush/sft). The training was performed on an RTX 6000 GPU (96GB) rented on RunPod (CUDA 12.8, PyTorch 2.8, vLLM 0.11.0).
+- Validation set: 
+  - The evaluation results shown in the table above are calculated on the full validation dataset of ~5K examples (same as provided in the assignment). 
+  - However during training, the W&B logs show evaluation metrics calculated on a randomly sampled subset of 1k examples from the validation set. This subset was sampled at the start of each training run to monitor training progress more efficiently without running full evaluation at each checkpoint.

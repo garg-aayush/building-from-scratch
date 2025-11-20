@@ -26,3 +26,4 @@ This directory contains my Supervised Fine-Tuning (SFT) implementation, training
     - [x] log intermediate evaluation examples to jsonl files and to wandb
     - [x] evaluate the model on the val data and log eval metrics like loss, tok_entropy etc
 - [x] Run the SFT training experiments for Qwen/Qwen2.5-Math-1.5B
+- [x] Compare different runs accuracy on full validation data

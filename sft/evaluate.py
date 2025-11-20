@@ -1,5 +1,10 @@
 import json
+import os
 
+# set this in case of any multiprocessing errors
+os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0" 
+
+from huggingface_hub import snapshot_download
 from utils.drgrpo_grader import r1_zero_reward_fn
 from utils.helper_fns import evaluate_vllm, pretty_print
 from vllm import LLM, SamplingParams
@@ -9,11 +14,17 @@ from vllm import LLM, SamplingParams
 # -------------------------------------------------------------#
 val_file = "data/val.jsonl"
 prompt_template_file = "data/r1_zero.prompt"
+save_only_accuracy = True
 
-checkpoint_num = 40
-checkpoint_dir = "results/filtered_norm_constant"
-eval_file = f"{checkpoint_dir}/val_results_checkpoint_{checkpoint_num}.jsonl"
+# checkpoint configuration
+repo_id = "garg-aayush/qwen-2.5-math-sft-filtered"
+checkpoint_num = 38
+checkpoint_dir = "/tmp/model_checkpoint"
+eval_file = f"results/run_filtered/acc_ckpt_{checkpoint_num}.jsonl"
+
+# model name
 model_name = f"{checkpoint_dir}/checkpoint_{checkpoint_num}"
+
 
 # sampling parameters
 sampling_params = {
@@ -35,6 +46,21 @@ model_params = {
 input_config = {k: v for k, v in globals().items() if not k.startswith("__") and isinstance(v, (int, float, str, bool, dict))}
 pretty_print(input_config, title="Input config")
 
+# create the eval_file directory if it doesn't exist
+os.makedirs(os.path.dirname(eval_file), exist_ok=True)
+
+# -------------------------------------------------------------#
+# Download the checkpoint from given repo_id and checkpoint_num (if not already downloaded)
+# -------------------------------------------------------------#
+if not os.path.exists(model_name):
+    snapshot_download(
+        repo_id=repo_id,
+        allow_patterns=f"checkpoint_{checkpoint_num}/*",
+        local_dir=checkpoint_dir
+    )
+    print(f"Download complete! Checkpoint saved to: {output_dir}/{checkpoint}")
+else:
+    print(f"Checkpoint already exists: {model_name}")
 
 # -------------------------------------------------------------#
 # Load the validation data
@@ -84,6 +110,9 @@ llm = LLM(**model_params)
 eval_results = evaluate_vllm(llm, r1_zero_reward_fn, prompts, baseline_results, sampling_params)
 pretty_print(eval_results["results"][0], title="Example baseline result")
 pretty_print(eval_results["accuracy"], title="Evaluation accuracy")
+
+if save_only_accuracy:
+    eval_results = eval_results["accuracy"]
 
 # save the evaluation results to a jsonl file
 print(f"Saving evaluation results to {eval_file}...")
