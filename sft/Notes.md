@@ -107,3 +107,11 @@ Below are the evaluation results across different SFT training runs:
 - Validation set: 
   - The evaluation results shown in the table above are calculated on the full validation dataset of ~5K examples (same as provided in the assignment). 
   - However during training, the W&B logs show evaluation metrics calculated on a randomly sampled subset of 1k examples from the validation set. This subset was sampled at the start of each training run to monitor training progress more efficiently without running full evaluation at each checkpoint.
+
+## Optional Assignment 5
+- [Optional Supplementary Assignment 5](https://github.com/stanford-cs336/assignment5-alignment/blob/main/cs336_spring2025_assignment5_supplement_safety_rlhf.pdf)
+
+### Run baseline evaluations on `Llama-3.1-8B` model
+| Eval | Accuracy |
+| :--- | :------- |
+| MMLU | 0.58 |
