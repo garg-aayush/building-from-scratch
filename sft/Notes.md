@@ -116,3 +116,12 @@ Below are the evaluation results across different SFT training runs:
 | :--- | :------- |
 | MMLU | 0.58 |
 | GSM8K | 0.16 |
+| AlpacaEval | 1.49% |
+
+### Running alpaca_eval
+
+- As per the assignment, I'm using [AlpacaEval](https://github.com/tatsu-lab/alpaca_eval) to evaluate the quality of my model's dialogue responses through an LLM-as-a-judge approach. AlpacaEval is a benchmark that measures how well language models respond to open-ended instructions by having a strong judge model compare outputs pairwise. Here, I compare the base `Llama-3.1-8B` (or finetuned's model responses against GPT-4 baseline outputs across 805 diverse instructions given in the `alpaca_eval.jsonl` file. *However, unlike the assignment, here I use a judge model (`Llama-3.3-70B-Instruct`) via Fireworks API.*
+- The script: `evaluate_dialogue_alpaca_eval.py` orchestrates the entire process. 
+  - It first uses vLLM to generate responses for all instructions from `alpaca_eval.jsonl` and save it to `baseline_alpaca_eval_outputs.json` in the results directory. 
+  - After generation, the script automatically calls the alpaca_eval library, which loads the judge configuration from `configs/configs.yaml` (specifying the Llama-3.3-70B-Instruct judge model), compares my outputs against the GPT-4 reference outputs from `alpaca_eval_gpt4_baseline.json`, and produces annotations and a leaderboard CSV with the final win rate.
+- To run this evaluation, make sure to set the `FIREWORKS_API_KEY` environment variable since the judge model runs through Fireworks API (the script automatically maps this to `OPENAI_API_KEY` for compatibility with alpaca_eval). 
