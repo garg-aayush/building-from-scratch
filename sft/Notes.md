@@ -115,3 +115,4 @@ Below are the evaluation results across different SFT training runs:
 | Eval | Accuracy |
 | :--- | :------- |
 | MMLU | 0.58 |
+| GSM8K | 0.16 |

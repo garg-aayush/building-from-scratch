@@ -31,7 +31,7 @@ This directory contains my Supervised Fine-Tuning (SFT) implementation, training
 ## To Do (Supplementary Assignment 5)
 - [-] Write evaluation scripts and evaluate the `Llama-3.1-8B` model (baseline)
     - [x] Write the evaluation script for the mmlu dataset
-    - [ ] Write the evaluation script for the gsm8k dataset
+    - [x] Write the evaluation script for the gsm8k dataset
     - [ ] Write the evaluation script for the alpaca_eval dataset
     - [ ] Write the evaluation script for the simple_safety_tests dataset
     - [ ] Create a unified evaluation script for all eval datasets
