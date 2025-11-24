@@ -117,6 +117,7 @@ Below are the evaluation results across different SFT training runs:
 | MMLU | 0.58 |
 | GSM8K | 0.16 |
 | AlpacaEval | 1.49% |
+| Simple Safety Tests | 0.62 |
 
 ### Running alpaca_eval
 
