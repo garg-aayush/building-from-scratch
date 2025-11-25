@@ -11,3 +11,27 @@ This directory contains my Supervised Fine-Tuning (SFT) implementation, training
     - [x] Batch infer the train data for reasoning traces using the `deepseek-v3p1-terminus`
     - [x] Build the final SFT dataset
     > Refer to [Notes.md](Notes.md) for more details on the dataset creation pipeline
+- [x] Run baseline evaluation
+    - [x] Run `Qwen/Qwen2.5-Math-1.5B` on the validation set (val.jsonl) to calculate the baseline accuracy
+- [x] Write all sft helper functions as per [Assignment 5](https://github.com/stanford-cs336/assignment5-alignment/blob/main/cs336_spring2025_assignment5_alignment.pdf)
+    - [x] Write and test the following helper functions:
+        - `tokenize_prompt_and_output`,`compute_entropy`, `get_response_log_probs`, `masked_normalize`, `sft_microbatch_train_step`
+- [x] Regenerate the SFT training dataset using the `gpt-oss-120b` model 
+- [x] Write the SFT training code
+    - [x] Write the minimal SFT script (without evaluation and logging)
+    > Note: I updated the sft_microbatch_train_step function to support per-token loss calculation. Basically now you can calculate the loss as per-token loss as well as the sum over the sequence dimension. You actually see stable training with per-token loss with acceptable loss and gradient norms. I will talk more about this when I am done with writing the code and is running the experiments.
+    - [x] Add wandb logging
+    - [x] Add vllm-based intermediate evaluation
+        - Now, we can evaluate the model on the validation set using the vLLM model. Note, there are two had to make to vLLM model based evaluation to work. Please see [Notes.md](Notes.md) for more details.    
+    - [x] log intermediate evaluation examples to jsonl files and to wandb
+    - [x] evaluate the model on the val data and log eval metrics like loss, tok_entropy etc
+- [x] Run the SFT training experiments for Qwen/Qwen2.5-Math-1.5B
+- [x] Compare different runs accuracy on full validation data
+
+## To Do (Supplementary Assignment 5)
+- [-] Write evaluation scripts and evaluate the `Llama-3.1-8B` model (baseline)
+    - [x] Write the evaluation script for the mmlu dataset
+    - [x] Write the evaluation script for the gsm8k dataset
+    - [x] Write the evaluation script for the alpaca_eval dataset
+    - [x] Write the evaluation script for the simple_safety_tests dataset
+    - [ ] Create a unified evaluation script for all eval datasets

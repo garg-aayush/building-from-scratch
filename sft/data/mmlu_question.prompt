@@ -1,0 +1,8 @@
+Answer the following multiple choice question about {subject}. Respond with a single sentence of the form "The correct answer is _", filling the blank with the letter corresponding to the correct answer (i.e., A, B, C or D).
+
+Question: {question}
+A. {options[0]}
+B. {options[1]}
+C. {options[2]}
+D. {options[3]}
+Answer:
