@@ -90,7 +90,31 @@ class InstructFinetuneDataset(Dataset):
             all_labels.extend(labels)
         all_input_ids = torch.tensor(all_input_ids, dtype=torch.long)
         all_labels = torch.tensor(all_labels, dtype=torch.long)
-        return all_input_ids, all_labels
+        # return all_input_ids, all_labels
+
+        # Reshaping and Filtering
+        # Calculate how many full chunks exist
+        num_chunks = len(all_input_ids) // self.seq_length
+        
+        # Truncate to exact multiple of seq_length
+        input_chunks = all_input_ids[:num_chunks * self.seq_length].view(num_chunks, self.seq_length)
+        label_chunks = all_labels[:num_chunks * self.seq_length].view(num_chunks, self.seq_length)
+
+        # Filter: Keep only chunks where at least one label is NOT -100
+        valid_chunk_mask = (label_chunks != -100).any(dim=1)
+        
+        # Diagnostics
+        total_dropped = num_chunks - valid_chunk_mask.sum().item()
+        if total_dropped > 0:
+            print(f"Dropped {total_dropped} / {num_chunks} chunks ({total_dropped/num_chunks:.1%}) that contained only masked prompt tokens.")
+        else:
+            print(f"All chunks are valid.")
+
+        # Flatten back to 1D stream of valid data
+        self.all_input_ids = input_chunks[valid_chunk_mask].view(-1)
+        self.all_labels = label_chunks[valid_chunk_mask].view(-1)
+        
+        return self.all_input_ids, self.all_labels
 
     def _apply_prompt_template(self, examples, include_response: bool = True):
         formatted_examples = []

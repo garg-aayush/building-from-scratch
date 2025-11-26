@@ -47,7 +47,7 @@ eval_interval = 200
 
 # common data params
 seq_length = 512
-apply_masking = False
+apply_masking = True
 
 # Training hyperparameters
 total_batch_size = 32

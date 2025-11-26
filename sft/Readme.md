@@ -41,5 +41,5 @@ This directory contains my Supervised Fine-Tuning (SFT) implementation, training
     - [x] Add the instruction-finetuning sft training script
 - [-] Run the SFT training experiments for `Llama-3.1-8B`
     - [x] With params mentioned in the assignment and no prompt masking
-    - [ ] with prompts masking
+    - [x] with prompts masking
     - [ ] if time and costs permit, search for better params 
