@@ -35,3 +35,7 @@ This directory contains my Supervised Fine-Tuning (SFT) implementation, training
     - [x] Write the evaluation script for the alpaca_eval dataset
     - [x] Write the evaluation script for the simple_safety_tests dataset
     - [ ] Create a unified evaluation script for all eval datasets
+      Note: Will do it later after completing the sft experiments
+- [-] Write the sft training code for instruction-finetuning
+    - [x] Add the dataset creating and loader script
+    - [ ] Add the instruction-finetuning sft training script

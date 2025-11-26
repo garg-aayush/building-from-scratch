@@ -126,3 +126,13 @@ Below are the evaluation results across different SFT training runs:
   - It first uses vLLM to generate responses for all instructions from `alpaca_eval.jsonl` and save it to `baseline_alpaca_eval_outputs.json` in the results directory. 
   - After generation, the script automatically calls the alpaca_eval library, which loads the judge configuration from `configs/configs.yaml` (specifying the Llama-3.3-70B-Instruct judge model), compares my outputs against the GPT-4 reference outputs from `alpaca_eval_gpt4_baseline.json`, and produces annotations and a leaderboard CSV with the final win rate.
 - To run this evaluation, make sure to set the `FIREWORKS_API_KEY` environment variable since the judge model runs through Fireworks API (the script automatically maps this to `OPENAI_API_KEY` for compatibility with alpaca_eval). 
+
+### Instruction-Finetuning SFT Dataset Creation and Loading
+- The `instruct_dataset.py` file contains the `InstructFinetuneDataset` class that is used to create the instruction-finetuning SFT dataset. Note, I have added an option to apply prompt masking to the data (prompts only). If True, the prompt tokens will be masked as -100 for the loss function.
+  - When implementing prompt masking for instruction fine-tuning, I encountered a subtle but important issue with BPE tokenization: the same text can tokenize differently depending on its context. Specifically, when I tokenized the prompt separately (ending with `"### Response:\n"`) versus as part of the full text (followed by the actual response), the boundary tokens didn't match due to subword merging behavior. 
+  - This meant the prompt tokens in my full sequence weren't identical to the standalone prompt tokens, making it impossible to accurately mask exactly where the prompt ends and the response begins. 
+  - Rather than implementing complex boundary detection logic, I opted for a pragmatic fix: simply drop the last token from the prompt before masking. This conservative approach ensures I never accidentally mask response tokens, and the cost is minimal—I'm only training on one extra formatting token (likely just a newline). It's a simple, one-line solution that handles the tokenization boundary issue gracefully without overcomplicating the code.
+  - To do later (if needed), consider memory optimization strategies:
+    - Memory mapping: Use np.memmap to load preprocessed tensors from disk without loading everything into RAM
+    - Lazy loading with on-the-fly packing: Keep tokenized examples in memory and pack them dynamically during __getitem__
+    - Disk caching: Preprocess once and save packed tensors to disk with torch.save, then load from cache in subsequent runs
