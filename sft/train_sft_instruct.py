@@ -20,30 +20,30 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # wandb tracking setup
 seed = 1337
 wandb_project = "sft_instruct"
-wandb_run_name = "test"
+wandb_run_name = "run_nomask"
 
 # Model config
 # model_name = "meta-llama/Llama-3.1-8B"
-model_name = "Qwen/Qwen2.5-Math-1.5B"
+model_name = "/home/models/llama31-8b"
 
 dtype = "bfloat16"  # "float16" or "bfloat16"
 attention_type = "flash_attention_2"
-use_compile = False
+use_compile = False # for CUDA 2.6, H100 false otherwise OOMs error, RTX6000 CUDA 2.8 true 
 
 # Device
 device = "cuda"  # "cuda" or "cpu"
 device_type = "cuda" if device.startswith("cuda") else "cpu"
 
 # train data params
-train_data_file = "/home/aayush/DATA/SFT/train.jsonl"
-prompt_template_file = "/home/aayush/repos/building-from-scratch/sft/data/alpaca_sft.prompt"
+train_data_file = "/home/DATA/train.jsonl"
+prompt_template_file = "/home/building-from-scratch/sft/data/alpaca_sft.prompt"
 train_num_workers = 4
 
 # eval data params
-eval_batch_size = 4
+eval_batch_size = 4 # for H100, use4 and for RTX6000 (96GB) use 8
 eval_num_workers = 0
-eval_data_file = "/home/aayush/DATA/SFT/test.jsonl"
-eval_interval = 50
+eval_data_file = "/home/DATA/test.jsonl"
+eval_interval = 200
 
 # common data params
 seq_length = 512
@@ -51,7 +51,7 @@ apply_masking = False
 
 # Training hyperparameters
 total_batch_size = 32
-micro_batch_size = 2
+micro_batch_size = 4 # works both for H100 and RTX6000
 grad_acc_steps = total_batch_size // micro_batch_size
 max_lr = 2e-5
 min_lr = max_lr * 0.1
@@ -59,11 +59,11 @@ max_steps = -100
 num_epochs = 1
 grad_norm_clip = 1.0
 warmup_ratio = 0.03
-cache_clear_interval = 10
+cache_clear_interval = 50
 
 # Checkpointing & logging
-output_dir = f"/home/aayush/RESULTS/SFT/instruct/{wandb_run_name}"
-checkpoint_interval = 100
+output_dir = f"/home/RESULTS/SFT/instruct/{wandb_run_name}"
+checkpoint_interval = eval_interval
 
 # -------------------------------------------------------------#
 # Seed and precision setup
@@ -194,7 +194,9 @@ def evaluate_val_data(model, eval_dataloader):
     model.eval()
     start_time = time.time()
     eval_loss = 0.0
-    for batch in eval_dataloader:
+    for i, batch in enumerate(eval_dataloader):
+        if i%1000 == 0:
+            print(f"Evaluating batch {i} of {len(eval_dataloader)}")
         input_ids, labels = batch["input_ids"].to(device), batch["labels"].to(device)
         with torch.autocast(device_type=device_type, dtype=dtype):
             logits = model(input_ids).logits

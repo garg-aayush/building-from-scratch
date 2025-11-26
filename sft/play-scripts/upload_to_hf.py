@@ -6,22 +6,15 @@ Simple script to upload checkpoints to Hugging Face Hub.
 from huggingface_hub import HfApi, create_repo
 
 # Configuration
-RESULTS_DIR = "/root/results/run_filtered_2epoch"
-REPO_NAME = "qwen-2.5-math-sft-filtered-2epoch"  # Change this to your desired repo name
+RESULTS_DIR = "/home/RESULTS/SFT/instruct/run_nomask"
+REPO_NAME = "llama31-8b-sft-nomask"  # Change this to your desired repo name
 PRIVATE = True  # Set to True if you want a private repo
 
 # Which checkpoints to upload (comment out the ones you don't want)
-CHECKPOINTS = [
-    # "checkpoint_10",
-    # "checkpoint_20",
-    # "checkpoint_30",
-    "checkpoint_40",  # Final checkpoint
-    "checkpoint_50", 
-    "checkpoint_56",
-]
+CHECKPOINTS = [f"checkpoint_{i}" for i in [6726]]
 
 # Upload evaluation results?
-UPLOAD_EVAL = True
+UPLOAD_EVAL = False
 
 
 def main():
