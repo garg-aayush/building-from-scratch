@@ -35,3 +35,14 @@ This directory contains my Supervised Fine-Tuning (SFT) implementation, training
     - [x] Write the evaluation script for the alpaca_eval dataset
     - [x] Write the evaluation script for the simple_safety_tests dataset
     - [ ] Create a unified evaluation script for all eval datasets
+      Note: Will do it later after completing the sft experiments
+- [x] Write the sft training code for instruction-finetuning
+    - [x] Add the dataset creating and loader script
+    - [x] Add the instruction-finetuning sft training script
+- [-] Run the SFT training experiments for `Llama-3.1-8B`
+    - [x] With params mentioned in the assignment and no prompt masking
+    - [x] with prompts masking
+    - [ ] if time and costs permit, search for better params 
+- [-] Compute the instruction-finetuning SFT evaluation metrics
+    - [x] Compute the accuracy metrics for no prompt masking exp.
+    - [x] Compute the accuracy metrics for prompt masking exp.
