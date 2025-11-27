@@ -43,3 +43,6 @@ This directory contains my Supervised Fine-Tuning (SFT) implementation, training
     - [x] With params mentioned in the assignment and no prompt masking
     - [x] with prompts masking
     - [ ] if time and costs permit, search for better params 
+- [-] Compute the instruction-finetuning SFT evaluation metrics
+    - [x] Compute the accuracy metrics for no prompt masking exp.
+    - [ ] Compute the accuracy metrics for prompt masking exp.

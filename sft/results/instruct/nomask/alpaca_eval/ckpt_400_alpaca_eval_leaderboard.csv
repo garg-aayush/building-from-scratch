@@ -1,0 +1,2 @@
+,win_rate,standard_error,mode,avg_length,n_wins,n_wins_base,n_draws,n_total,discrete_win_rate,length_controlled_winrate,lc_standard_error
+llama-3.1-8b-sft-nomask-ckpt-400,2.1739130434782608,0.5105355401610635,community,896,17,787,1,805,2.1739130434782608,3.0113322835711958,0.1411028517106255
