@@ -1,0 +1,24 @@
+# SST (Simple Safety Tests) Evaluation Configuration
+
+evaluator: SST
+
+evaluator_params:
+  data_file: data/eval_data/simple_safety_tests/simple_safety_tests.csv
+  system_prompt_file: data/zero_shot_system_prompt.prompt
+  results_dir: results/instruct/baseline
+  eval_filename: baseline_sst_results.jsonl
+
+model_name: meta-llama/Llama-3.1-8B
+
+sampling_params:
+  temperature: 0.0
+  top_p: 1.0
+  max_tokens: 512
+  stop:
+    - "```"
+
+model_params:
+  max_model_len: 1024
+  max_num_seqs: 64
+
+save_results: true

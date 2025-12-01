@@ -121,8 +121,8 @@ Below are the evaluation results across different SFT training runs:
 | AlpacaEval | 1.49% |
 | Simple Safety Tests | 0.62 |
 
-### Running alpaca_eval
 
+### Running alpaca_eval
 - As per the assignment, I'm using [AlpacaEval](https://github.com/tatsu-lab/alpaca_eval) to evaluate the quality of my model's dialogue responses through an LLM-as-a-judge approach. AlpacaEval is a benchmark that measures how well language models respond to open-ended instructions by having a strong judge model compare outputs pairwise. Here, I compare the base `Llama-3.1-8B` (or finetuned's model responses against GPT-4 baseline outputs across 805 diverse instructions given in the `alpaca_eval.jsonl` file. *However, unlike the assignment, here I use a judge model (`Llama-3.3-70B-Instruct`) via Fireworks API.*
 - The script: `evaluate_dialogue_alpaca_eval.py` orchestrates the entire process. 
   - It first uses vLLM to generate responses for all instructions from `alpaca_eval.jsonl` and save it to `baseline_alpaca_eval_outputs.json` in the results directory. 
@@ -181,3 +181,14 @@ As a side experiment, I also trained with prompt masking enabled—during loss c
 - **MMLU**: The masking experiment shows a concerning mid-training dip (~57% at step 3K) before recovering since like a partial knowledge forgetting happened here. My guess is that when computing loss on prompt tokens, the model is forced to "relearn" prompt patterns, which temporarily interferes with pre-trained knowledge. 
 - **AlpacaEval**: No-mask experiment edges ahead slightly. The training on the full sequence helps the model learn the overall conversational pattern and produce more naturally flowing responses that match the prompt style. 
 - **SST Safety**: Both approaches perform similarly.
+
+
+### Unified Evaluation Script
+I also created a unified evaluation script (`evaluate_instruct.py`) that consolidates all four evaluation benchmarks (GSM8K, MMLU, AlpacaEval, SST) into a single interface. This replaces the need to maintain separate evaluation scripts for each benchmark. The main idea is to have a consistent interface for all the evaluation benchmarks and to be able to run all the evaluations with one command. For example, now you can run all the evaluations with one command:
+```bash
+python evaluate_instruct.py --all # or --config <config_file> to run a specific evaluation
+```
+In case you are running the script on finetuned checkpoint, make sure to update the params appropriately in the `data/eval_configs/*.yaml` files.
+
+> Note, I have majorly vibe-coded the unified evaluation script. Since I already had working standalone evaluation scripts for each benchmark. The individual evaluation logic (answer extraction, API calls, etc.) was largely copied from the existing scripts and wrapped into the common `Evaluator` interface. 
+You can find the individual evaluation scripts in the `play-scripts/eval-scripts` directory.
