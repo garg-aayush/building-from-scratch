@@ -48,4 +48,4 @@ This directory contains my Supervised Fine-Tuning (SFT) implementation, training
     - [x] Compute the accuracy metrics for prompt masking exp.
 - [x] Plot and analyze the different sft training results
     - [x] Plot and analyze the reasoning SFT training results for the `Qwen/Qwen2.5-Math-1.5B` model
-    - [x] Plot and analyze the instruction-finetuning SFT training results for the `Llama-3.1-8B` model
+    - [x] Plot and analyze the instruction-finetuning SFT training results for the `Llama-3.1-8B` model 
