@@ -64,12 +64,12 @@ Basically, I followed the same approach and logic as in the [Assignment 5](https
 I added configurable loss normalization in `sft_microbatch_train_step` via the `per_token_loss` flag to handle variable-length sequences. This is different from the original assignment where we only had the sum over the sequence dimension normalization. Without per-token normalization, longer sequences contribute 3-4× more to gradients than shorter ones, creating high variance in gradient updates (larger seq lens are preferred over shorter ones). Based on my initial tests, per-token loss results in much more stable training with acceptable loss values and consistent gradient norms. I plan to conduct a few ablation experiments comparing both approaches to show that per-token loss is indeed a better approach for this task.
 
 ### Workarounds for vLLM Model–Based Intermediate Evaluation
-If you follow the steps in [Assignment 5](https://github.com/stanford-cs336/assignment5-alignment/blob/main/cs336_spring2025_assignment5_alignment.pdf) to run intermediate evaluation, you will run into errors related to vLLM initialization and weight loading. Here’s what I had to change.
+If you follow the steps in [Assignment 5](https://github.com/stanford-cs336/assignment5-alignment/blob/main/cs336_spring2025_assignment5_alignment.pdf) to run intermediate evaluation, you will run into errors related to vLLM initialization and weight loading. Here's what I had to change.
 
 #### Use the `colocate` Approach for vLLM Initialization
-- The separate-GPU inference setup described in the assignment no longer works with vLLM 0.7.x and above. The initialization logic has changed, and the assignment’s code is outdated.
+- The separate-GPU inference setup described in the assignment no longer works with vLLM 0.7.x and above. The initialization logic has changed, and the assignment's code is outdated.
 *-The simpler solution is to use the `colocate` initialization strategy, where you create the vLLM model on the same device as the SFT policy model.
-- Make sure the initialization code runs inside a `main` function so that vLLM’s multiprocessing can launch correctly. Also set appropriate values for `gpu_memory_utilization`, `max_model_len`, and `max_num_seqs`.
+- Make sure the initialization code runs inside a `main` function so that vLLM's multiprocessing can launch correctly. Also set appropriate values for `gpu_memory_utilization`, `max_model_len`, and `max_num_seqs`.
 
 #### Fixing the `LLMEngine` Missing `model_executor` Attribute
 *-Loading updated model weights into the vLLM instance caused an `LLMEngine` error:
@@ -80,7 +80,7 @@ If you follow the steps in [Assignment 5](https://github.com/stanford-cs336/assi
 
 #### Fixing `ValueError: There is no module or parameter named '_orig_mod' in Qwen2ForCausalLM`
 - This happens when using a compiled model in `sft_microbatch_train_step`.
-- The issue comes from the compiled model’s original weights being referenced under the `_orig_mod` attribute. Make sure to load the policy weights from `_orig_mod` attribute into the vLLM instance in `load_policy_into_vllm_instance`.
+- The issue comes from the compiled model's original weights being referenced under the `_orig_mod` attribute. Make sure to load the policy weights from `_orig_mod` attribute into the vLLM instance in `load_policy_into_vllm_instance`.
 
 Please refer to my following chatGPT [conversation](https://chatgpt.com/share/691d6824-4564-8012-a2c9-587c599c45ec) for more details on the workarounds
 
@@ -108,6 +108,8 @@ Below are the evaluation results across different SFT training runs:
   - The evaluation results shown in the table above are calculated on the full validation dataset of ~5K examples (same as provided in the assignment). 
   - However during training, the W&B logs show evaluation metrics calculated on a randomly sampled subset of 1k examples from the validation set. This subset was sampled at the start of each training run to monitor training progress more efficiently without running full evaluation at each checkpoint.
 
+![SFT Training Results](results/plots/sft_train_reasoning_results.png)
+
 ## Optional Assignment 5
 - [Optional Supplementary Assignment 5](https://github.com/stanford-cs336/assignment5-alignment/blob/main/cs336_spring2025_assignment5_supplement_safety_rlhf.pdf)
 
@@ -119,8 +121,8 @@ Below are the evaluation results across different SFT training runs:
 | AlpacaEval | 1.49% |
 | Simple Safety Tests | 0.62 |
 
-### Running alpaca_eval
 
+### Running alpaca_eval
 - As per the assignment, I'm using [AlpacaEval](https://github.com/tatsu-lab/alpaca_eval) to evaluate the quality of my model's dialogue responses through an LLM-as-a-judge approach. AlpacaEval is a benchmark that measures how well language models respond to open-ended instructions by having a strong judge model compare outputs pairwise. Here, I compare the base `Llama-3.1-8B` (or finetuned's model responses against GPT-4 baseline outputs across 805 diverse instructions given in the `alpaca_eval.jsonl` file. *However, unlike the assignment, here I use a judge model (`Llama-3.3-70B-Instruct`) via Fireworks API.*
 - The script: `evaluate_dialogue_alpaca_eval.py` orchestrates the entire process. 
   - It first uses vLLM to generate responses for all instructions from `alpaca_eval.jsonl` and save it to `baseline_alpaca_eval_outputs.json` in the results directory. 
@@ -136,3 +138,57 @@ Below are the evaluation results across different SFT training runs:
     - Memory mapping: Use np.memmap to load preprocessed tensors from disk without loading everything into RAM
     - Lazy loading with on-the-fly packing: Keep tokenized examples in memory and pack them dynamically during __getitem__
     - Disk caching: Preprocess once and save packed tensors to disk with torch.save, then load from cache in subsequent runs
+
+## SFT Instruction Fine-Tuning Results
+
+I ran instruction fine-tuning on the `Llama-3.1-8B` model using UltraChat-200K + SafetyLlama datasets provided in the supplementary assignment 5. Below are the evaluation results on different benchmarks across training:
+
+![Instruction Fine-tuning Results](results/plots/instruct_finetune_results_nomask.png)
+
+| Benchmark | Baseline | Final (1 epoch=6726 steps) |
+|-----------|----------|-------------------|
+| **GSM8K** | 16.4% | 29.0% |
+| **SST (Safety)** | 62.0% | 78.0% |
+| **AlpacaEval** | 1.57% LC | 5.3% LC |
+| **MMLU** | 58.1% | ~58.3% |
+> LC: length-conditioned win rate
+
+- **GSM8K (16.4% -> 29.0%)**: it strongly indicates that the model learned to structure mathematical reasoning better. This is because the UltraChat dataset contains step-by-step reasoning examples that help with this. Still makes calculation errors in many cases, but the format and approach improved significantly.
+- **SST Safety (62.0% -> 78.0%)**: improvement was expected since the training dataset contains SafetyLlama data. The model learned to handle unsafe requests better.
+- **AlpacaEval (1.57% -> 5.3%)**: the conversational instruction-following style improved, which makes sense given UltraChat is exactly this type of data. 
+  - Note, the length-conditioned win rate is 5.3% against GPT-4, which is still very low due to the short length of the responses (max length is 512 tokens) and in many examples the model repeats the same response multiple times. 
+- **MMLU (58.1% -> 58.3%)**: stayed flat. This is because the training data is conversational and safety-focused, not factual Q&A—there's simply no signal in this data to move MMLU. 
+  - Note, MMLU tests factual knowledge that's encoded during pre-training. SFT teaches the model *how* to respond, not *what* to know. That information is from the pre-training data.
+  ![MMLU Comparison](results/plots/mmlu_comparison.png)
+  - More importantly, there is no catastrophic forgetting. Despite fine-tuning on ~200K conversational examples, the model retained its factual knowledge. Some individual subjects regressed slightly (college math: 33% -> 26%), while others improved slightly, leading to a near-zero net change overall. **This is actually a good sign—it means instruction fine-tuning improved the model's helpfulness without destroying what it learned during pre-training.**
+  - One way to improve MMLU metric is to use a few-shot or CoT prompts for MMLU; you'll often see a bigger jump than the done zero-shot evaluation here.
+
+### Side Experiment: Prompt Masking vs No-Masking
+
+As a side experiment, I also trained with prompt masking enabled—during loss calculation, I masked the prompt tokens (set to -100) so the loss is computed only on the response tokens, not the input prompt.
+- **no-mask**: loss covers both prompt + answer, so all tokens in a sequence contribute to the loss.
+- **mask**: loss is computed only on the response tokens, so only the response tokens contribute to the loss.
+![Mask vs No-Mask Comparison](results/plots/instruct_finetune_results_comparison.png)
+
+| Metric | Baseline | Mask | No-Mask |
+|--------|----------|------|---------|
+| **GSM8K** | 16.4% | **32.7%** | 29.0% |
+| **MMLU** | 58.1% | 58.2% | 58.4% |
+| **SST Safety** | 62.0% | 77% | 78% |
+| **AlpacaEval** | 1.57% | 4.5% | **5.3%** |
+
+- **GSM8K**: As per my expectations, masking substantially improves the GSM8K accuracy. Now, since the loss is focused only on response tokens, the model concentrates on solution generation rather than learning to predict prompt boilerplate. This makes sense as the mathematical reasoning requires precise output generation and diluting gradients across prompt tokens hurts this.
+- **MMLU**: The masking experiment shows a concerning mid-training dip (~57% at step 3K) before recovering since like a partial knowledge forgetting happened here. My guess is that when computing loss on prompt tokens, the model is forced to "relearn" prompt patterns, which temporarily interferes with pre-trained knowledge. 
+- **AlpacaEval**: No-mask experiment edges ahead slightly. The training on the full sequence helps the model learn the overall conversational pattern and produce more naturally flowing responses that match the prompt style. 
+- **SST Safety**: Both approaches perform similarly.
+
+
+### Unified Evaluation Script
+I also created a unified evaluation script (`evaluate_instruct.py`) that consolidates all four evaluation benchmarks (GSM8K, MMLU, AlpacaEval, SST) into a single interface. This replaces the need to maintain separate evaluation scripts for each benchmark. The main idea is to have a consistent interface for all the evaluation benchmarks and to be able to run all the evaluations with one command. For example, now you can run all the evaluations with one command:
+```bash
+python evaluate_instruct.py --all # or --config <config_file> to run a specific evaluation
+```
+In case you are running the script on finetuned checkpoint, make sure to update the params appropriately in the `data/eval_configs/*.yaml` files.
+
+> Note, I have majorly vibe-coded the unified evaluation script. Since I already had working standalone evaluation scripts for each benchmark. The individual evaluation logic (answer extraction, API calls, etc.) was largely copied from the existing scripts and wrapped into the common `Evaluator` interface. 
+You can find the individual evaluation scripts in the `play-scripts/eval-scripts` directory.

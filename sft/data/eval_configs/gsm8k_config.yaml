@@ -1,0 +1,25 @@
+# GSM8K Evaluation Configuration
+
+evaluator: GSM8K
+
+evaluator_params:
+  data_file: data/eval_data/gsm8k/test.jsonl
+  gsm8k_question_file: data/question_only.prompt
+  system_prompt_file: data/zero_shot_system_prompt.prompt
+  results_dir: results/instruct/baseline
+  eval_filename: baseline_gsm8k_results.jsonl
+
+model_name: meta-llama/Llama-3.1-8B
+
+sampling_params:
+  temperature: 0.0
+  top_p: 1.0
+  max_tokens: 512
+  stop:
+    - "```"
+
+model_params:
+  max_model_len: 2048
+  max_num_seqs: 32
+
+save_results: true

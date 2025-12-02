@@ -20,7 +20,7 @@ save_only_accuracy = True
 repo_id = "garg-aayush/qwen-2.5-math-sft-filtered"
 checkpoint_num = 38
 checkpoint_dir = "/tmp/model_checkpoint"
-eval_file = f"results/run_filtered/acc_ckpt_{checkpoint_num}.jsonl"
+eval_file = f"results/reason/run_filtered/acc_ckpt_{checkpoint_num}.jsonl"
 
 # model name
 model_name = f"{checkpoint_dir}/checkpoint_{checkpoint_num}"

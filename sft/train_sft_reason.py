@@ -29,7 +29,7 @@ from vllm import SamplingParams
 # -------------------------------------------------------------#
 # wandb tracking setup
 seed = 1337
-wandb_project = "sft"
+wandb_project = "sft_reason"
 wandb_run_name = "run_filtered"
 
 # Model config
