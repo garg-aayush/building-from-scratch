@@ -13,30 +13,36 @@
 
 ## Dataset Creation Pipeline
 
-I created the three datasets can be used both SFT and GRPO training (in later experiments):
+Since the original CS336 MATH dataset isn't publicly available, I created my own datasets for SFT (and later GRPO) training. Here's the 3-step pipeline:
 
 ### Step 1: Creating the Train and Validation Splits
 **Script**: [make_datasets.py](play-scripts/make_datasets.py)
 
-- I started with `math_results.jsonl` that contains the validation data info used in assignment-5 of CS336 course and extracted the problems and expected answers to create my validation dataset: **val.jsonl**
-- For the training data, I loaded the `hiyouga/math12k` dataset (combining both train and test splits), then filtered out any problems that appeared in the validation set to avoid data leakage. This gave me the training dataset: **train.jsonl**.
+- I started with `math_results.jsonl` that contains the validation data info used in assignment-5 of CS336 course and extracted the problems and expected answers to create my validation dataset: **val.jsonl** (~5K examples)
+- For the training data, I loaded the `hiyouga/math12k` dataset (combining both train and test splits), then filtered out any problems that appeared in the validation set to avoid data leakage. This gave me the training dataset: **train.jsonl**
 
 ### Step 2: Batch Inference for Reasoning Traces
 **Script**: [data4batch_infer.py](play-scripts/data4batch_infer.py)
 
-- **train_data_4_batchinfer.jsonl**: I formatted each training problem with a prompt asking the model to provide reasoning and put the final answer in `\boxed{}` format. This created `train_data_4_batchinfer.jsonl`, which I then batch infered using the `deepseek-v3p1-terminus` model available via [Fireworks AI](https://fireworks.ai/).
+- I formatted each training problem with a prompt asking the model to provide step-by-step reasoning and put the final answer in `\boxed{}` format
+- Used [Fireworks AI](https://fireworks.ai/) batch inference API with `gpt-oss-120b` model to generate reasoning traces
+- Note: Initially tried `deepseek-v3p1-terminus` but the traces were inadequate in both format and answer quality
 
 ### Step 3: Building the Final SFT Dataset
 **Script**: [extract_answers_from_batch.py](play-scripts/extract_answers_from_batch.py)
 
-Finally, I processed the batch inference outputs to create **sft.jsonl** using the following logic: 
-- I filtered for only the successfully completed responses (where finish_reason was `stop`) and extracted the reasoning traces and answers from the model outputs using regex.
-- Finally, after a bit of cleaning I created the final SFT dataset **sft.jsonl** with the following fields: `problem`, `reasoning_trace`, `extracted_answer`, and `expected_answer`.
+I processed the batch inference outputs to create the final SFT dataset:
+- Filtered for only successfully completed responses (`finish_reason="stop"`)
+- Extracted reasoning traces and answers using regex
+- Compared extracted answers against expected answers to identify correct/incorrect traces
 
-### Update
-- While writing the SFT training scripts, I realized the earlier `deepseek-v3p1-terminus` traces were inadequate in both format and answer quality. I regenerated them in the correct format and with correct answers using the `gpt-oss-120b` model. The updated datasets are:
-  - `data/sft_gpt-oss-120b.jsonl`: 4,836 examples containing both correct and incorrect answers
-  - `data/sft_gpt-oss-120b_filtered.jsonl`: 3,496 examples containing only correct answers
+**Final datasets:**
+| File | Examples | Description |
+|------|----------|-------------|
+| `sft_gpt-oss-120b.jsonl` | 4,836 | Full dataset with both correct and incorrect answers |
+| `sft_gpt-oss-120b_filtered.jsonl` | 3,496 | **Recommended** - Contains only correct reasoning traces |
+
+Each example has fields: `problem`, `reasoning_trace`, `extracted_answer`, and `expected_answer`.
 
 
 ## Run baseline evaluation
