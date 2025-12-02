@@ -62,7 +62,7 @@ I built LLM inference from scratch implementing:
 ## Supervised Fine-Tuning (SFT)
 I implemented Supervised Fine-Tuning from scratch, running two categories of SFT experiments:
 
-**Reasoning SFT** (Qwen2.5-Math-1.5B): Fine-tuned on math reasoning traces to improve step-by-step problem solving capabilities
+**Reasoning SFT** (Qwen2.5-Math-1.5B): Fine-tuned on math reasoning traces to improve problem solving.
 ![Reasoning SFT Results](sft/results/plots/sft_train_reasoning_results.png)
 
 **Instruction SFT** (Llama-3.1-8B): Fine-tuned on UltraChat-200K + SafetyLlama for general instruction following.
