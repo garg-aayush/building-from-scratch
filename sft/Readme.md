@@ -2,15 +2,50 @@
 
 This folder contains my **from-scratch implementation** of Supervised Fine-Tuning (SFT), loosely following Stanford's [CS336 Assignment 5](https://github.com/stanford-cs336/assignment5-alignment) (both main and supplementary parts). I implemented the core SFT training loop, helper functions, and evaluation pipelines, then ran two categories of experiments:
 
-**1. Reasoning SFT**: Fine-tuned `Qwen2.5-Math-1.5B` on math reasoning traces (from `math12k` dataset) to improve step-by-step reasoning and problem solving:
+**1. Reasoning SFT**: Fine-tuned [Qwen2.5-Math-1.5B](https://huggingface.co/Qwen/Qwen2.5-Math-1.5B) on math reasoning traces (from `math12k` dataset) to improve step-by-step reasoning and problem solving:
 
 > Best: **53.4% reward accuracy** (up from 2.9% baseline) with 99.3% format accuracy
 ![Reasoning SFT Results](results/plots/sft_train_reasoning_results.png)
 
-**2. Instruction-Tuning SFT**: Fine-tuned `Llama-3.1-8B` on UltraChat-200K + SafetyLlama for general instruction following:
+**2. Instruction SFT**: Fine-tuned [Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B) on UltraChat-200K + SafetyLlama for general instruction following:
 
-> Best: GSM8K 16→**33%**, Safety 62→**78%**, AlpacaEval 1.6→**5.3%**, MMLU ~58% (no knowledge forgetting)
+> Best: GSM8K 16->**33%**, Safety 62->**78%**, AlpacaEval 1.6->**5.3%**, MMLU ~58% (no knowledge forgetting)
 ![Instruction-Tuning SFT Results](results/plots/instruct_finetune_results_nomask.png)
+
+## Table of Contents
+- [How to go through the implementation](#how-to-go-through-the-implementation)
+- [Reasoning SFT](#reasoning-sft)
+- [Instruction SFT](#instruction-sft)
+- [Datasets and Checkpoints](#datasets-and-checkpoints)
+- [Folder Structure](#folder-structure)
+
+## How to go through the implementation
+
+If you want to understand how I approached the implementation, I recommend exploring the commit history. Each commit represents an incremental step—setting up inference pipeline, building datasets, implementing training, running experiments, and analyzing results. 
+
+### Commit Summary
+
+**Phase 1: Reasoning SFT (Qwen2.5-Math-1.5B)**
+
+| Commits | Task | Description |
+|---------|------|-------------|
+| `87f9f08`, `c6de361` | Setup | Init project, setup vLLM for offline inference |
+| `212ee1e` -> `0f2d905` | Dataset | Train/val splits, batch infer reasoning traces, build SFT dataset |
+| `159a02d`, `85dfc75` | Baseline + helpers | Baseline eval (2.9%), core SFT functions |
+| `ea41a8e` | Dataset v2 | Re-generate traces with `gpt-oss-120b` |
+| `d5d0e1e` -> `533efa0` | Training | Training script, wandb, vLLM eval, metrics logging |
+| `7d77cdc`, `cf852c5` | Experiments | Run training runs, compare on full val set |
+
+**Phase 2: Instruction Fine-Tuning SFT (Llama-3.1-8B)**
+
+| Commits | Task | Description |
+|---------|------|-------------|
+| `7612c69` -> `b94b8d7` | Baselines | Eval data + zero-shot baselines (MMLU, GSM8K, AlpacaEval, SST) |
+| `0d0cb7f` -> `b816cfa` | Training setup | Dataset class with masking, training script |
+| `88df93f`, `2c03b21` | Training runs | Run no-mask and mask experiments |
+| `0fd9058` -> `e2ebaab` | Evaluation | Compute metrics, plot results, unified eval script |
+
+> For detailed per-commit breakdown, see [Detailed Commit History](Notes.md#detailed-commit-history) section in [Notes.md](Notes.md).
 
 
 ## Reasoning SFT
@@ -54,12 +89,12 @@ I ran a few experiments to understand what works best for reasoning SFT. All run
 - Running the training for 2 epochs (`run_filtered-2epoch`) gave the best result at `0.5336`, though the improvement is sort of marginal.
 - Based on the format accuracy metrics, the model quickly learns to use `<think>` and `<answer>` tags correctly.
 
-> Note, I have uploaded all the training runs checkpoints, train/val datasets to hugging face hub. Please refer to the [Datasets and Checkpoints](#datasets-and-checkpoints) section for more details.
+> Note: I have uploaded all checkpoints and datasets to Hugging Face Hub. See the [Datasets and Checkpoints](#datasets-and-checkpoints) section for details.
 
 
-## Instruction Fine-Tuning SFT
+## Instruction SFT
 
-Following the [CS336 Supplementary Assignment 5](https://github.com/stanford-cs336/assignment5-alignment/blob/main/cs336_spring2025_assignment5_supplement_safety_rlhf.pdf), I fine-tuned `Llama-3.1-8B` for instruction-following that can follow instructions, handle diverse tasks, and refuse harmful requests.
+Following the [CS336 Supplementary Assignment 5](https://github.com/stanford-cs336/assignment5-alignment/blob/main/cs336_spring2025_assignment5_supplement_safety_rlhf.pdf), I fine-tuned `Llama-3.1-8B` to build a model that can follow instructions, handle diverse tasks, and refuse harmful requests.
 
 Unlike reasoning SFT where I trained on step-by-step reasoning traces, instruction fine-tuning trains on conversational instruction-response pairs. The training data combines **UltraChat-200K** (diverse multi-turn conversations) and **SafetyLlama** (safety-focused examples) to teach the model both helpfulness and safety.
 
@@ -107,7 +142,7 @@ I ran two experiments using [train_sft_instruct.py](train_sft_instruct.py) with 
 **Key Takeaways:**
 - **GSM8K improved significantly** (16% -> 29-33%): The model learned structured reasoning in both the runs. Prompt masking helped more (32.7% vs 29.0%) by focusing loss on response generation helps math reasoning.
 - **Safety improved as expected** (62% -> 78%): Direct result of including SafetyLlama data in training. Both masking approaches performed similarly.
-- **AlpacaEval improved too** (1.6% → 5.3%): Conversational instruction-following improved substantially, though still low due to 512-token response limit. No-mask performed slightly better (5.3% vs 4.5%) as I guess training on full sequence helps produce naturally flowing conversational responses.
+- **AlpacaEval improved too** (1.6% -> 5.3%): Conversational instruction-following improved substantially, though still low due to 512-token response limit. No-mask performed slightly better (5.3% vs 4.5%) as I guess training on full sequence helps produce naturally flowing conversational responses.
 - **MMLU stayed flat** (~58%): This is actually good and shows no catastrophic forgetting. MMLU tests factual knowledge from pre-training and SFT teaches *how* to respond, not *what* to know. Thus, both runs preserved pre-training knowledge equally well.
 
 For more details on the evaluation pipeline, see [SFT Instruction Fine-Tuning Results](Notes.md#sft-instruction-finetuning-results) section in [Notes.md](Notes.md).
@@ -116,7 +151,7 @@ For more details on the evaluation pipeline, see [SFT Instruction Fine-Tuning Re
 
 
 ## Datasets and Checkpoints
-For now I have uploaded all the training and evaluation datasets to the Hugging Face Hub. Please refer to the [Datasets and Checkpoints](#sft-reasoning-finetuning) section for more details.
+I have uploaded all training/evaluation datasets and model checkpoints to Hugging Face Hub.
 
 ### SFT Instruction finetuning
 **Datasets:**
@@ -184,51 +219,3 @@ sft/
 ├── Readme.md                   # This file
 └── requirements.txt            # Python dependencies
 ```
-
-## To Do
-- [x] Setup vLLM for offline batched inference
-    - Fairly simple to install and setup at least with CUDA 12.8
-    - Refer to [Notes.md](Notes.md) for more details on the installation and usage
-- [x] Create the training and validation datasets
-    - [x] Create the train and validation splits using the `hiyouga/math12k` dataset
-    - [x] Batch infer the train data for reasoning traces using the `deepseek-v3p1-terminus`
-    - [x] Build the final SFT dataset
-    > Refer to [Notes.md](Notes.md) for more details on the dataset creation pipeline
-- [x] Run baseline evaluation
-    - [x] Run `Qwen/Qwen2.5-Math-1.5B` on the validation set (val.jsonl) to calculate the baseline accuracy
-- [x] Write all sft helper functions as per [Assignment 5](https://github.com/stanford-cs336/assignment5-alignment/blob/main/cs336_spring2025_assignment5_alignment.pdf)
-    - [x] Write and test the following helper functions:
-        - `tokenize_prompt_and_output`,`compute_entropy`, `get_response_log_probs`, `masked_normalize`, `sft_microbatch_train_step`
-- [x] Regenerate the SFT training dataset using the `gpt-oss-120b` model 
-- [x] Write the SFT training code
-    - [x] Write the minimal SFT script (without evaluation and logging)
-    > Note: I updated the sft_microbatch_train_step function to support per-token loss calculation. Basically now you can calculate the loss as per-token loss as well as the sum over the sequence dimension. You actually see stable training with per-token loss with acceptable loss and gradient norms. I will talk more about this when I am done with writing the code and is running the experiments.
-    - [x] Add wandb logging
-    - [x] Add vllm-based intermediate evaluation
-        - Now, we can evaluate the model on the validation set using the vLLM model. Note, there are two had to make to vLLM model based evaluation to work. Please see [Notes.md](Notes.md) for more details.    
-    - [x] log intermediate evaluation examples to jsonl files and to wandb
-    - [x] evaluate the model on the val data and log eval metrics like loss, tok_entropy etc
-- [x] Run the SFT training experiments for Qwen/Qwen2.5-Math-1.5B
-- [x] Compare different runs accuracy on full validation data
-
-## To Do (Supplementary Assignment 5)
-- [-] Write evaluation scripts and evaluate the `Llama-3.1-8B` model (baseline)
-    - [x] Write the evaluation script for the mmlu dataset
-    - [x] Write the evaluation script for the gsm8k dataset
-    - [x] Write the evaluation script for the alpaca_eval dataset
-    - [x] Write the evaluation script for the simple_safety_tests dataset
-    - [x] Create a unified evaluation script for all eval datasets
-        - [x] Move the individual evaluation scripts to the `play-scripts/eval-scripts` directory
-- [x] Write the sft training code for instruction-finetuning
-    - [x] Add the dataset creating and loader script
-    - [x] Add the instruction-finetuning sft training script
-- [-] Run the SFT training experiments for `Llama-3.1-8B`
-    - [x] With params mentioned in the assignment and no prompt masking
-    - [x] with prompts masking
-    - [ ] if time and costs permit, search for better params 
-- [x] Compute the instruction-finetuning SFT evaluation metrics
-    - [x] Compute the accuracy metrics for no prompt masking exp.
-    - [x] Compute the accuracy metrics for prompt masking exp.
-- [x] Plot and analyze the different sft training results
-    - [x] Plot and analyze the reasoning SFT training results for the `Qwen/Qwen2.5-Math-1.5B` model
-    - [x] Plot and analyze the instruction-finetuning SFT training results for the `Llama-3.1-8B` model

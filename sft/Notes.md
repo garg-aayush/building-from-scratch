@@ -198,3 +198,43 @@ In case you are running the script on finetuned checkpoint, make sure to update 
 
 > Note, I have majorly vibe-coded the unified evaluation script. Since I already had working standalone evaluation scripts for each benchmark. The individual evaluation logic (answer extraction, API calls, etc.) was largely copied from the existing scripts and wrapped into the common `Evaluator` interface. 
 You can find the individual evaluation scripts in the `play-scripts/eval-scripts` directory.
+
+## Detailed Commit History
+
+**Phase 1: Reasoning SFT (Qwen2.5-Math-1.5B)**
+
+| Commit | Title | Description |
+|--------|-------|-------------|
+| `87f9f08` | SFT: init | Initial project setup |
+| `c6de361` | SFT: setup vllm | vLLM for offline batched inference |
+| `212ee1e` | SFT: create train/val splits | Train/val splits from `hiyouga/math12k` |
+| `3a03c54` | SFT: batch infer reasoning traces | Generate reasoning traces via Fireworks API |
+| `0f2d905` | SFT: build sft dataset | Process batch outputs into final SFT dataset |
+| `159a02d` | SFT: baseline evaluation | Evaluate untrained Qwen2.5-Math-1.5B (2.9% accuracy) |
+| `85dfc75` | SFT: helper functions | Core SFT functions (tokenization, loss, etc.) |
+| `ea41a8e` | SFT: regenerate dataset | Re-generate traces with `gpt-oss-120b` for better quality |
+| `d5d0e1e` | SFT: minimal training script | Basic SFT training loop |
+| `6ccf7b1` | SFT: wandb logging | Add experiment tracking |
+| `a5dac62` | SFT: vllm-based eval | Intermediate evaluation during training |
+| `533efa0` | SFT: eval metrics | Log loss, token entropy, etc. |
+| `7d77cdc` | SFT: run training exps | Train multiple runs (all, filtered, 2-epoch) |
+| `cf852c5` | SFT: compare runs | Evaluate all runs on full validation set |
+
+**Phase 2: Instruction Fine-Tuning SFT (Llama-3.1-8B)**
+
+| Commit | Title | Description |
+|--------|-------|-------------|
+| `7612c69` | SFT-Dialogue: eval data | Add evaluation data and prompts |
+| `70715ba` | SFT-Dialogue: MMLU baseline | Zero-shot MMLU evaluation (58%) |
+| `0492841` | SFT-Dialogue: GSM8K baseline | Zero-shot GSM8K evaluation (16%) |
+| `f1e35c7` | SFT-Dialogue: AlpacaEval baseline | Zero-shot AlpacaEval (1.49%) |
+| `b94b8d7` | SFT-Dialogue: SST baseline | Zero-shot Simple Safety Tests (62%) |
+| `0d0cb7f` | SFT-Dialogue: rename scripts | Use "instruct" naming for clarity |
+| `4780e20` | SFT-Dialogue: dataset class | `InstructFinetuneDataset` with prompt masking |
+| `b816cfa` | SFT-Dialogue: training script | Instruction fine-tuning training script |
+| `88df93f` | SFT-Dialogue: run no-mask | Train without prompt masking |
+| `2c03b21` | SFT-Dialogue: run mask | Train with prompt masking |
+| `0fd9058` | SFT-Dialogue: eval no-mask | Compute metrics for no-mask run |
+| `f4b62e7` | SFT-Dialogue: eval mask | Compute metrics for mask run |
+| `3ce2238` | SFT-Dialogue: plot results | Analyze and visualize training runs |
+| `e2ebaab` | SFT-Dialogue: unified eval | Create unified evaluation script |
