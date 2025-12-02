@@ -1,6 +1,78 @@
-# Supervised Fine-Tuning Track
+# Supervised finetuning
 
-This directory contains my Supervised Fine-Tuning (SFT) implementation, training experiments,and relevant evaluation scripts. I’m loosely following the SFT portion of Stanford's [CS336](https://stanford-cs336.github.io/spring2025/) course's [Assignment 5](https://github.com/stanford-cs336/assignment5-alignment) (both the main and supplementary parts). Once the core SFT and evaluation code are ready, I plan to explore additional experiments and potential improvements.
+This directory contains my Supervised finetuning (SFT) implementation, training experiments,and relevant evaluation scripts. I’m loosely following the SFT portion of Stanford's [CS336](https://stanford-cs336.github.io/spring2025/) course's [Assignment 5](https://github.com/stanford-cs336/assignment5-alignment) (both the main and supplementary parts). Once the core SFT and evaluation code are ready, I plan to explore additional experiments and potential improvements.
+
+## Datasets and Checkpoints
+For now I have uploaded all the training and evaluation datasets to the Hugging Face Hub. 
+
+### SFT Instruction finetuning
+
+**Datasets:**
+The instruction-tuning dataset is available in the [sft-instruct](https://huggingface.co/datasets/garg-aayush/sft-cs336-assign5-datasets/tree/main/sft-instruct) folder of HF's repo `sft-cs336-assign5-datasets`.
+| File | Description |
+|------|-------------|
+| `train.jsonl` | Training dataset (~200k examples) |
+| `test.jsonl` | Validation dataset for intermediate evaluation |
+| `sample_train.jsonl` | 1k-example subsample for debugging |
+
+> **Note:** If any eval data files are missing locally, download them from the [eval](https://huggingface.co/datasets/garg-aayush/sft-cs336-assign5-datasets/tree/main/sft-instruct/eval) subfolder (contains GSM8K, MMLU, Simple Safety Tests, Alpaca Eval).
+
+**Training checkpoints:**
+| Run | Checkpoint |
+|-----|------------|
+| With prompt masking (`run_mask`) | [garg-aayush/llama31-8b-sft-mask](https://huggingface.co/garg-aayush/llama31-8b-sft-mask) |
+| Without prompt masking (`run_nomask`) | [garg-aayush/llama31-8b-sft-nomask](https://huggingface.co/garg-aayush/llama31-8b-sft-nomask) |
+
+**Training logs** can be found in the wandb's [sft_instruct](https://wandb.ai/garg-aayush/sft_instruct) project.
+
+### SFT Reasoning finetuning
+The reasoning SFT datasets (for `Qwen/Qwen2.5-Math-1.5B`) are available in the [sft-reason](https://huggingface.co/datasets/garg-aayush/sft-cs336-assign5-datasets/tree/main/sft-reason) folder of HF's repo `sft-cs336-assign5-datasets`.
+
+**Datasets:**
+| File | Examples | Description |
+|------|----------|-------------|
+| `sft_gpt-oss-120b_filtered.jsonl` | 3,496 | Recommended - Contains only correct reasoning traces |
+| `sft_gpt-oss-120b.jsonl` | 4,836 | Full dataset with both correct and incorrect answers |
+| `val.jsonl` | ~5K | Validation set from CS336 Assignment 5 for evaluation |
+
+> For details on how these datasets were created (batch inference pipeline, filtering, etc.), see [Notes.md](Notes.md#dataset-creation-pipeline).
+
+**Training checkpoints:**
+| Run | Checkpoint |
+|-----|------------|
+| Trained on full training data (`run_all`) | [garg-aayush/qwen-2.5-math-sft-all](https://huggingface.co/garg-aayush/qwen-2.5-math-sft-all) |
+| Trained on filtered training data (`run_filtered`) | [garg-aayush/qwen-2.5-math-sft-filtered](https://huggingface.co/garg-aayush/qwen-2.5-math-sft-filtered) |
+| Trained on filtered training data with no per-token loss normalization (`run_filtered-res-len`) | [garg-aayush/qwen-2.5-math-sft-filtered-res-len](https://huggingface.co/garg-aayush/qwen-2.5-math-sft-filtered-res-len) |
+| Trained on filtered training data for 2 epochs (`run_filtered-2epoch`) | [garg-aayush/qwen-2.5-math-sft-filtered-2epoch](https://huggingface.co/garg-aayush/qwen-2.5-math-sft-filtered-2epoch) |
+
+**Training logs** can be found in the wandb's [sft](https://wandb.ai/garg-aayush/sft) project.
+
+## Folder Structure
+```
+sft/
+├── train_sft_instruct.py       # Instruction-tuning training
+├── train_sft_reason.py         # Reasoning SFT training
+├── evaluate_instruct.py        # Instruction-tuning evaluation
+├── evaluate_reason.py          # Reasoning evaluation
+├── results/                    # SFT experiments results
+├── utils/
+│   ├── dataloader.py           # SFT-Reasoning data loading fns
+│   ├── drgrpo_grader.py        # SFT-Reasoning answer-grading logic
+│   ├── helper_fns.py           # helper fns
+│   ├── instruct_dataset.py     # SFT-Instruction finetuning dataset/dataloader class & fns
+│   ├── instruct_measures.py    # SFT-Instruction finetuning eval metrics
+│   └── post_train.py           # SFT helper functions
+├── data/
+│   ├── eval_configs/           # YAML configs for SFT-Instruction finetuning evaluation datasets
+│   ├── eval_data/              # Evaluation dataset files
+│   └── *.prompt                # Prompt templates for train/evals
+├── play-scripts/
+│   ├── eval-scripts/           # Individual SFT-Instruction finetuning evaluation scripts
+│   └── plot-scripts/           # vibe-coded plotting scripts
+├── Notes.md                    # Development notes
+├── Readme.md                   # This file
+└── requirements.txt            # Python dependencies
+```
 
 ## To Do
 - [x] Setup vLLM for offline batched inference
