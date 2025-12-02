@@ -8,7 +8,8 @@ building-from-scratch/
 ├── basic-gpt/      # Character-level GPT built incrementally; notebooks, scripts
 ├── gpt-2/          # GPT‑2 (124M) reproduction + improvements; training runs, notes
 ├── bpe/            # BPE tokenizer from scratch; training/encoding optimizations, custom tokenizers
-└── llm-inference/  # LLM inference from scratch; sampling strategies, KV cache, speculative decoding
+├── llm-inference/  # LLM inference from scratch; sampling strategies, KV cache, speculative decoding
+└── sft/            # Supervised fine-tuning from scratch; reasoning & instruction SFT experiments
 ```
 
 ## Basic-GPT
@@ -17,7 +18,7 @@ It contains a character-level GPT built incrementally, following Karpathy’s ["
   <img src="basic-gpt/images/loss_curves.png" alt="Basic-GPT training/validation loss curves" width="900">
 </p>
 
-[Read more →](basic-gpt/Readme.md)
+[Read more ->](basic-gpt/Readme.md)
 
 ## GPT-2
 I reimplemented GPT‑2 (124M) code from scratch and then further added improvements such as RoPE, global data shuffling, and tuned the learning rate schedule. In my best run (`gpt2-rope`), I achieved a **validation loss 2.987** and **HellaSwag accuracy 0.320**, surpassing the original GPT‑2 baseline quite significantly.
@@ -34,7 +35,7 @@ I reimplemented GPT‑2 (124M) code from scratch and then further added improvem
 | gpt2-global-datafix | 3.004503 | 0.316869 | Used global shuffling with better indexing |
 | gpt2-rope | **2.987392** | **0.320155** | Replaced learned embeddings with RoPE |
 
-[Read more →](gpt-2/Readme.md)
+[Read more ->](gpt-2/Readme.md)
 
 ## BPE Tokenizer
 I implemented Byte Pair Encoding (BPE) training and inference from scratch. I started with a naive baseline, progressively optimized training (**~50x faster**) and encoding (**3.7x faster with Rust**), then trained custom 16K tokenizers on TinyStoriesV2 (~2.6GB) and FineWeb (~3.3GB) datasets. I also tried to evaluate their impact on GPT-2 pre-training.
@@ -43,7 +44,7 @@ I implemented Byte Pair Encoding (BPE) training and inference from scratch. I st
   <img src="bpe/images/BPE-Summary.png" alt="BPE tokenizer comparison on GPT-2 training" width="900">
 </p>
 
-[Read more →](bpe/Readme.md)
+[Read more ->](bpe/Readme.md)
 
 ## LLM Inference
 I built LLM inference from scratch implementing:
@@ -54,6 +55,17 @@ I built LLM inference from scratch implementing:
 | Optimization | Best Speedup (float32) | Best Speedup (float16) |
 |--------------|------------------------|------------------------|
 | KV cache | **2.76×** (gpt2-large, 800 tokens) | **1.48×** (gpt2-xl, 800 tokens) |
-| Speculative decoding | **1.63×** (draft: gpt2 → target: gpt2-xl, gamma=5) | **1.31×** (draft: gpt2 → target: gpt2-xl, gamma=3) |
+| Speculative decoding | **1.63×** (draft: gpt2 -> target: gpt2-xl, gamma=5) | **1.31×** (draft: gpt2 -> target: gpt2-xl, gamma=3) |
 
-[Read more →](llm-inference/Readme.md)
+[Read more ->](llm-inference/Readme.md)
+
+## Supervised Fine-Tuning (SFT)
+I implemented Supervised Fine-Tuning from scratch, running two categories of SFT experiments:
+
+**Reasoning SFT** (Qwen2.5-Math-1.5B): Fine-tuned on math reasoning traces to improve step-by-step problem solving capabilities
+![Reasoning SFT Results](sft/results/plots/sft_train_reasoning_results.png)
+
+**Instruction SFT** (Llama-3.1-8B): Fine-tuned on UltraChat-200K + SafetyLlama for general instruction following.
+![Instruction SFT Results](sft/results/plots/instruct_finetune_results_nomask.png)
+
+[Read more ->](sft/Readme.md)

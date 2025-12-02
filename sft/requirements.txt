@@ -1,15 +1,10 @@
-accelerate==1.11.0
-huggingface-hub==0.36.0
-math-verify==0.8.0
-openai==2.8.1
-tiktoken==0.12.0
-tokenizers==0.22.1
-torch==2.8.0+cu129
-torchaudio==2.8.0+cu129
-torchvision==0.23.0+cu129
-transformers==4.57.1
 vllm==0.11.0
-wandb==0.23.0
-xformers==0.0.32.post1
-# # install flash attention separately
-# pip install flash-attn --no-build-isolation
+flash-attn
+math-verify[antlr4_13_2]
+pylatexenc
+accelerate
+wandb
+nvitop
+hf_transfer
+alpaca_eval
+matplotlib
