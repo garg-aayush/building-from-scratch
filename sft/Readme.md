@@ -12,12 +12,15 @@ This folder contains my **from-scratch implementation** of Supervised Fine-Tunin
 > Best: GSM8K 16->**33%**, Safety 62->**78%**, AlpacaEval 1.6->**5.3%**, MMLU ~58% (no knowledge forgetting)
 ![Instruction-Tuning SFT Results](results/plots/instruct_finetune_results_nomask.png)
 
+> Note, I have also written a HuggingFace blogpost about the implementation and the debugging journey. You can find it here: [What I Learned Building SFT from the Ground Up](https://huggingface.co/blog/garg-aayush/building-sft-from-ground-up).
+
 ## Table of Contents
 - [How to go through the implementation](#how-to-go-through-the-implementation)
 - [Reasoning SFT](#reasoning-sft)
 - [Instruction SFT](#instruction-sft)
 - [Datasets and Checkpoints](#datasets-and-checkpoints)
 - [Folder Structure](#folder-structure)
+
 
 ## How to go through the implementation
 
