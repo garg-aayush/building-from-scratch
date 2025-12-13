@@ -12,19 +12,18 @@ from vllm import LLM, SamplingParams
 # -------------------------------------------------------------#
 # Input params
 # -------------------------------------------------------------#
-val_file = "data/val.jsonl"
-prompt_template_file = "data/r1_zero.prompt"
+val_file = "/home/DATA/EXPERT-ITER/val.jsonl"
+prompt_template_file = "/home/DATA/EXPERT-ITER/r1_zero.prompt"
 save_only_accuracy = True
 
 # checkpoint configuration
-repo_id = "garg-aayush/qwen-2.5-math-sft-filtered"
-checkpoint_num = 38
-checkpoint_dir = "/tmp/model_checkpoint"
-eval_file = f"results/reason/run_filtered/acc_ckpt_{checkpoint_num}.jsonl"
+run_name = "run_S75_D1024_R2"
+repo_id = f"/home/RESULTS/{run_name}/checkpoint_step_75"
+checkpoint_dir = "/tmp/"
+eval_file = f"/home/RESULTS/eval_acc_{run_name}.jsonl"
 
 # model name
-model_name = f"{checkpoint_dir}/checkpoint_{checkpoint_num}"
-
+model_name = f"{repo_id}"
 
 # sampling parameters
 sampling_params = {
