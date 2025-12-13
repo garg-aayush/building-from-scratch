@@ -18,7 +18,7 @@ from utils.dataloader import SftTrainDataLoaderLite
 from utils.drgrpo_grader import r1_zero_reward_fn
 from utils.helper_fns import (evaluate_vllm, init_vllm,
                               load_policy_into_vllm_instance, prepare_val_data,
-                              pretty_print)
+                              pretty_print, create_ei_filtered_data)
 from utils.post_train import (get_response_log_probs, sft_eval_step,
                               sft_microbatch_train_step,
                               tokenize_prompt_and_output)
@@ -30,10 +30,9 @@ from vllm import LLM, SamplingParams
 # wandb tracking setup
 seed = 1337
 wandb_project = "expert-iter"
-wandb_run_name = "test"
 
 # Model config
-model_name = "Qwen/Qwen2.5-Math-1.5B"
+model_name = "/home/qwen/"
 dtype = "bfloat16"  # "float16" or "bfloat16"
 attention_type = "flash_attention_2"
 use_compile = True
@@ -42,33 +41,31 @@ use_compile = True
 device = "cuda:0"  # please use a GPU for training
 device_type = "cuda" if device.startswith("cuda") else "cpu"
 
-# train and val ta
-train_data_file = "/home/aayush/DATA/EXPERT-ITER/sft_gpt-oss-120b_filtered.jsonl"
-prompt_template_file = "/home/aayush/DATA/EXPERT-ITER/r1_zero.prompt"
-val_data_file = "/home/aayush/DATA/EXPERT-ITER/val.jsonl"
+# train and val data
+train_data_file = "/home/DATA/EXPERT-ITER/sft_gpt-oss-120b_filtered.jsonl"
+prompt_template_file = "/home/DATA/EXPERT-ITER/r1_zero.prompt"
+val_data_file = "/home/DATA/EXPERT-ITER/val.jsonl"
+tmp_dir = "/tmp"
 
 # Training hyperparameters
-total_batch_size = 8
+total_batch_size_list = [8, 32, 64]
+# learning_rate_list = [1.7e-5, 3.53e-5, 5e-5] # 5e-5 max lr and follow sqrt(2) rule for learning rate scaling
+learning_rate_list = [3.5e-5, 5e-5, 7e-5] # 1e-4 for batch size of 128 and follow sqrt(2) rule for learning rate scaling 
+batch_boundary_list = [24, 128]
 micro_batch_size = 2
-max_grad_acc_steps = total_batch_size // micro_batch_size
 val_batch_size = 4
-learning_rate = 1e-5 
-max_steps = 38 # ~1 epoch for 4836 examples (non-filtered), ~28 steps for 3496 examples (filtered)
 grad_norm_clip = 1.0
 use_per_token_loss = True # use per-token loss instead of per-sequence loss
 normalize_constant = 1.0 # normalization constant for the loss
 batch_per_ei = 512
 num_ei = 5
-num_rollouts = 4 # number of outputs to generate for each example
+num_rollouts = 2 # number of outputs to generate for each example
+wandb_run_name = f"run_D={batch_per_ei}_G={num_ei}_R={num_rollouts}"
 
 # Checkpointing & logging
-output_dir = f"/home/aayush/RESULTS/{wandb_run_name}"
-checkpoint_interval = 10
+output_dir = f"/home/RESULTS/{wandb_run_name}"
 run_intermediate_eval = True # run intermediate evaluation on the validation set
-log_eval_examples_to_jsonl = True
 max_val_examples = 1000  # maximum number of validation examples to evaluate on
-num_val_examples_to_log = 20 # number of validation examples to log to wandb
-eval_interval = 10  # evaluate on val dataset
 
 # vLLM config
 vllm_dtype = "bfloat16"  # vLLM expects string, not torch dtype
@@ -84,91 +81,85 @@ vllm_sampling_params = {
     "include_stop_str_in_output": True,
     "n": num_rollouts
 }
-
+vllm_sampling_params_eval = {
+    "temperature": 1.0,
+    "top_p": 1.0,
+    "max_tokens": 1024,
+    "stop": ["</answer>"],
+    "include_stop_str_in_output": True
+}
 
 # -------------------------------------------------------------#
 # Helper functions
 # -------------------------------------------------------------#
-def create_ei_filtered_data(prompt_template_file: str, data_file: str, max_examples: int=512, 
-                            vllm_model: LLM=None, vllm_sampling_params_obj: SamplingParams=None,
-                            reward_fn: Callable[[str, str], dict[str, float]]=None, filtered_data_file: str=None):
-    # sample a batch of max_examples examples from the data
-    prompts, examples = sample_batch(prompt_template_file, data_file, max_examples)
-    print(f"Sampled {len(prompts)} examples from the data")
-    pretty_print(examples[0], title="Example example")
-    pretty_print(prompts[0], title="Example prompt")
+@torch.no_grad()
+def evaluate_val_data(model, val_prompts, results, val_batch_size):
+    """Evaluate the model on the validation data and return the avg_loss, avg_token_entropy, avg_correct_response_length, avg_incorrect_response_length"""
     
-    # filter the examples using the vLLM model
-    filtered_train_results, filtered_acc_dict = filter_data(vllm_model, reward_fn, prompts, examples, vllm_sampling_params_obj)
-    pretty_print(filtered_train_results[0], title="Example filtered train result")
-    print(f"Filtered {len(filtered_train_results)} examples out of {len(examples)} examples")
-    print(f"Accuracy: {filtered_acc_dict['avg_acc']:.4f}, Format accuracy: {filtered_acc_dict['avg_format_acc']:.4f}")
+    model.eval()
     
-    # save the filtered data to a jsonl file list of dicts
-    with open(filtered_data_file, "w") as f:
-        json.dump(filtered_train_results, f, indent=2)
-    return filtered_data_file
+    # track different metrics
+    loss_accum = 0.0
+    token_entropy_accum = 0.0
+    correct_response_tokens = 0
+    incorrect_response_tokens = 0
+    num_batches = len(val_prompts) // val_batch_size
+    num_correct = 0
+    num_incorrect = 0
+    
+    for i in range(0, len(val_prompts), val_batch_size):
+        # get the batch of prompts, results, and reward flags
+        batch_prompts = val_prompts[i:i+val_batch_size]
+        batch_results = [res["output"] for res in results[i:i+val_batch_size]]
+        batch_reward_flags = [res["reward"]["reward"] > 0 for res in results[i:i+val_batch_size]]
+        
+        # tokenize the batch
+        tokenized_batch = tokenize_prompt_and_output(prompt_strs=batch_prompts,
+                                                        output_strs=batch_results,
+                                                        tokenizer=tokenizer)
+        input_ids, labels, response_mask = tokenized_batch["input_ids"].to(device), tokenized_batch["labels"].to(device), tokenized_batch["response_mask"].to(device)
+        
+        # calculate the loss and token entropy
+        with torch.autocast(device_type=device_type, dtype=dtype):
+            # log_probs: (batch_size, sequence_length), token_entropy: (batch_size, sequence_length)
+            response_log_probs = get_response_log_probs(model, input_ids, labels, True)
+            # calculate the loss
+            loss = sft_eval_step(response_log_probs["log_probs"], response_mask, normalize_constant, use_per_token_loss)
+        # accumulate the loss and token entropy
+        loss_accum += loss.detach()
+        token_entropy_accum += (response_log_probs["token_entropy"] * response_mask).sum().detach()
+        
+        # split the response token counts into correct and incorrect
+        for j, corr_flag in enumerate(batch_reward_flags):
+            if corr_flag:
+                correct_response_tokens += response_mask[j].sum().detach()
+                num_correct += 1
+            else:
+                incorrect_response_tokens += response_mask[j].sum().detach()
+                num_incorrect += 1
+        
+    # calculate the average loss, token entropy, and response length
+    avg_loss = loss_accum / num_batches
+    avg_token_entropy = token_entropy_accum / (correct_response_tokens + incorrect_response_tokens)
+    avg_correct_response_length = correct_response_tokens / num_correct if num_correct > 0 else 0.0
+    avg_incorrect_response_length = incorrect_response_tokens / num_incorrect if num_incorrect > 0 else 0.0
+    
+    model.train()
+    
+    return avg_loss.item(), avg_token_entropy.item(), avg_correct_response_length.item(), avg_incorrect_response_length.item()
 
-def sample_batch(prompt_template_file: str, data_file: str, max_examples: int=512):
-    # read the data file and prompt template file
-    with open(prompt_template_file, "r") as f:
-        prompt_template = f.read()
-    with open(data_file, "r") as f:
-        data = json.load(f)
-
-    # sample the validation data
-    total_examples = len(data)
-    if max_examples > total_examples:
-        print(f"Warning: max_examples={max_examples} is greater than the total_examples={total_examples}, using all {total_examples} examples")
+def get_lr_and_max_steps(num_examples, boundary_list, bs_list, lr_list, data_loader, micro_bs):
+    tot_examples = len(data_loader)
+    if num_examples < boundary_list[0]:
+        lr, bs = lr_list[0], bs_list[0]
+    elif num_examples < boundary_list[1]:
+        lr, bs = lr_list[1], bs_list[1]
     else:
-        data = random.sample(data, max_examples)
-    
-    # create the list of prompts and baseline results dict
-    prompts, examples = zip(*[
-        (prompt_template.format(question=data[i]["problem"]), 
-        {
-            "problem": data[i]["problem"], 
-            "reasoning_trace": data[i]["reasoning_trace"],
-            "expected_answer": data[i]["expected_answer"],
-            "extracted_answer": data[i]["extracted_answer"]
-        }
-        )
-        for i in range(len(data))
-    ])
-    return list(prompts), list(examples)
-
-def filter_data(
-    vllm_model: LLM,
-    reward_fn: Callable[[str, str], dict[str, float]],
-    prompts: List[str],
-    results: List[dict],
-    sampling_params: SamplingParams
-) -> None:
-    
-    # generate the prompts
-    outputs = vllm_model.generate(prompts, sampling_params)
-    
-    # calculate the reward using the reward function
-    # and add the outputs to the baseline results
-    acc_dict = {"avg_acc": 0.0,
-                "avg_format_acc": 0.0,
-                }
-    filtered_results = []
-    for i, (output_list, result) in enumerate(zip(outputs, results)):
-        for j, output in enumerate(output_list.outputs):
-            output_text = output.text
-            reward = reward_fn(output_text, str(result["expected_answer"]).strip())
-            if reward["reward"] > 0.0:
-                filtered_results.append(result)
-                acc_dict["avg_acc"] += reward["reward"]
-                acc_dict["avg_format_acc"] += reward["format_reward"]
-                break
-    total_examples = len(results)
-    total_filtered_examples = len(filtered_results)
-    for key in acc_dict.keys():
-        acc_dict[key] /= total_examples
-    
-    return filtered_results, acc_dict
+        lr, bs = lr_list[2], bs_list[2]
+    max_steps = max(tot_examples // bs, 1)
+    cur_grad_steps = min(tot_examples, bs) // micro_bs
+    print(f"num_examples: {num_examples}\nbs: {bs}\nmax_steps: {max_steps}\ncur_grad_steps: {cur_grad_steps}\nlearning_rate: {lr:.4e}")
+    return lr, max_steps, cur_grad_steps
 
 # -------------------------------------------------------------#
 # Seed and precision setup
@@ -185,11 +176,13 @@ torch.set_float32_matmul_precision("high")
 # -------------------------------------------------------------#
 # Main function
 # -------------------------------------------------------------#
-# wrap the code in a main function to allow for vllm initialization that uses multi-processing
 if __name__ == '__main__':
-    # print config
+    # -------------------------------------------------------------#
+    # Print config
+    # -------------------------------------------------------------#
     input_config = {k: v for k, v in globals().items() if not k.startswith("__") and isinstance(v, (int, float, str, bool, dict))}
-    pretty_print(input_config, title="Input config")
+    pretty_print(input_config, title="Input config", is_super_title=True)
+    
     
     # -------------------------------------------------------------#
     # Assertions and other setup
@@ -203,11 +196,10 @@ if __name__ == '__main__':
         raise ValueError("bfloat16 is not supported on this device, please use a different dtype")
     dtype = {"float16": torch.float16, "bfloat16": torch.bfloat16}[dtype]
 
-
     # -------------------------------------------------------------#
     # Initialize the vLLM model for inference 
     # -------------------------------------------------------------#
-    pretty_print(f"Initializing the vLLM model for inference...", title="vLLM model initialization")
+    pretty_print(f"Initializing the vLLM model for inference...", title="vLLM model initialization", is_super_title=True)
     vllm_init_params = {
         "model": model_name,
         "gpu_memory_utilization": vllm_gpu_memory_utilization,
@@ -218,70 +210,123 @@ if __name__ == '__main__':
     vllm_model = init_vllm(seed, vllm_init_params)
     # create sampling parameters object
     vllm_sampling_params_obj = SamplingParams(**vllm_sampling_params)
+    vllm_sampling_params_obj_eval = SamplingParams(**vllm_sampling_params_eval)
+    
     
     # -------------------------------------------------------------#
     # Initialize the tokenizer and model
     # -------------------------------------------------------------#
-    pretty_print(f"Initializing the tokenizer and model...", title="Tokenizer and model initialization")
+    pretty_print(f"Initializing the tokenizer and model...", title="Tokenizer and model initialization", is_super_title=True)
     # tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     # model
     model = AutoModelForCausalLM.from_pretrained(model_name, dtype=dtype, attn_implementation=attention_type, device_map=device)
     # compile the model
     if use_compile:
+        print(f"Compiling the model...")
         model = torch.compile(model)
     
     
     # -------------------------------------------------------------#
     # Setup the optimizer
     # -------------------------------------------------------------#
-    pretty_print(f"Initializing the optimizer...", title="Optimizer initialization")
+    pretty_print(f"Initializing the optimizer...", title="Optimizer initialization", is_super_title=True)
     # check if fused AdamW is available
     fused_available = "fused" in inspect.signature(torch.optim.AdamW).parameters
     use_fused = fused_available and device_type == "cuda"
     print(f"Using fused AdamW: {use_fused}")
     # optimizer
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, fused=use_fused)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate_list[0], fused=use_fused)
     print(optimizer)
     
+    
     # -------------------------------------------------------------#
-    # Training loop
+    # Prepare the validation data
     # -------------------------------------------------------------#
-    pretty_print(f"Starting the training loop...", title="Training loop")
+    if run_intermediate_eval:
+        pretty_print(f"Preparing the validation data of {max_val_examples} examples from {val_data_file}...", title="Validation data preparation", is_super_title=True)
+        val_prompts, val_baseline_results = prepare_val_data(val_data_file, prompt_template_file, max_val_examples)
+        # print the validation prompts and baseline results
+        pretty_print(val_prompts[:2], title="Example validation prompt")
+        pretty_print(val_baseline_results[2], title="Example validation baseline result")
+    
+    
+    # -------------------------------------------------------------#
+    # Initialize wandb
+    # -------------------------------------------------------------#
+    pretty_print(f"Initializing wandb project {wandb_project} and run {wandb_run_name}...", title="Wandb initialization", is_super_title=True)
+    wandb.init(project=wandb_project, name=wandb_run_name, config=input_config)
+
+    # x/y-axis for train and eval steps
+    wandb.define_metric("step_train")
+    wandb.define_metric("step_eval")
+
+    # metrics that start with train/ are tied to train_step and vice versa for eval/
+    wandb.define_metric("train/*", step_metric="step_train")
+    wandb.define_metric("eval_ei/*", step_metric="step_eval")
+    
+    
+    # -------------------------------------------------------------#
+    # Expert iteration loop
+    # -------------------------------------------------------------#
     model.train()
     
+    # clean all the temporary files
+    for f in os.listdir(tmp_dir):
+        if f.startswith('tmp_') and f.endswith('.json'):
+            os.remove(os.path.join(tmp_dir, f))
+
     # outer loop: expert iteration
-    for ei in range(num_ei):
-        torch.cuda.empty_cache()
-        if ei > 0:
-            print(f"Loading the model weights from the previous expert iteration to vLLM model...")
-            load_policy_into_vllm_instance(model, vllm_model)
-        
+    ei_step = 0
+    train_step_counter = 0
+    
+    # evaluate the model on the validation data
+    pretty_print(f"Evaluating the model on the validation data...", title="Validation data evaluation")
+    t_eval = time.time()
+    vllm_eval_results = evaluate_vllm(vllm_model, r1_zero_reward_fn, val_prompts, val_baseline_results, vllm_sampling_params_obj_eval)
+    eval_avg_loss, eval_avg_token_entropy, avg_correct_res_len, avg_incorrect_res_len = evaluate_val_data(model, val_prompts, vllm_eval_results["results"], val_batch_size)
+    dt = time.time() - t_eval
+    # print the evaluation metrics
+    print(f"exp_iter: {ei_step} | loss: {eval_avg_loss:.4f} | avg_entropy: {eval_avg_token_entropy:.4f} | avg_acc: {vllm_eval_results['accuracy']['avg_acc']:.4f} | avg_format_acc: {vllm_eval_results['accuracy']['avg_format_acc']:.4f} | avg_correct_res_len: {avg_correct_res_len:.2f} | avg_incorrect_res_len: {avg_incorrect_res_len:.2f} | dt: {dt:.2f}s")
+    # log the evaluation metrics to wandb
+    eval_log_dict = {
+                "step_eval": ei_step,
+                "eval_ei/loss": eval_avg_loss,
+                "eval_ei/avg_token_entropy": eval_avg_token_entropy,
+                "eval_ei/avg_acc": vllm_eval_results['accuracy']['avg_acc'],
+                "eval_ei/avg_format_acc": vllm_eval_results['accuracy']['avg_format_acc'],
+                "eval_ei/avg_correct_res_len": avg_correct_res_len,
+                "eval_ei/avg_incorrect_res_len": avg_incorrect_res_len,
+                "eval_ei/dt": dt
+            }
+    wandb.log(eval_log_dict)
+    torch.cuda.empty_cache()
+
+    for ei_step in range(1, num_ei + 1):
+        pretty_print(f"Starting expert iteration {ei_step}...", title=f"Expert iteration {ei_step}", is_super_title=True)
+
         # sample a batch of batch_per_ei examples from the data and filter them and save the filtered data to a jsonl file
-        pretty_print(f"Sampling a batch of {batch_per_ei} examples from the data and filtering them for expert iteration {ei}...", title="Filtering train data")
-        cur_train_data_file = create_ei_filtered_data(prompt_template_file, train_data_file, batch_per_ei, 
-                                                           vllm_model, vllm_sampling_params_obj, r1_zero_reward_fn, 
-                                                           f"./tmp_{ei}.json")
-        print(f"Filtered data saved to {cur_train_data_file}")
-        torch.cuda.empty_cache()
+        pretty_print(f"Sampling and filtering a batch of {batch_per_ei} examples from the data...", title="Filtering train data")
+        tmp_train_data_file = f"{tmp_dir}/tmp_{ei_step}.json"
+        _, num_filtered_examples = create_ei_filtered_data(prompt_template_file, train_data_file, batch_per_ei, vllm_model, vllm_sampling_params_obj, r1_zero_reward_fn, tmp_train_data_file)
+        print(f"Filtered data saved to {tmp_train_data_file}")
         
         # Setup the data loader
         pretty_print(f"Initializing the data loader...", title="Data loader initialization")
-        # initialize the data loader
-        train_data_loader = SftTrainDataLoaderLite(cur_train_data_file, prompt_template_file, micro_batch_size, seed + ei)
-        # print the first batch of data
-        pretty_print("", title="First batch of data")
-        for i, item in enumerate(train_data_loader.get_batch()):
-            pretty_print(item, title=f"Example data {i}")
-        # reset the data loader pointer
-        train_data_loader.reset(only_ptr=True)
-        print(f"Number of batches in current expert iteration: {len(train_data_loader)}")
-
-        cur_grad_acc_steps = min(max_grad_acc_steps, len(train_data_loader) // micro_batch_size)
-        max_steps = max(len(train_data_loader) // total_batch_size, 1) 
-        print(f"Maximum number of steps: {max_steps}\nCurrent gradient accumulation steps: {cur_grad_acc_steps}")
+        train_data_loader = SftTrainDataLoaderLite(tmp_train_data_file, prompt_template_file, micro_batch_size, seed + ei_step)
+        # # print the first batch of data
+        # for i_batch, item in enumerate(train_data_loader.get_batch()):
+        #     pretty_print(item, title=f"Example data {i_batch}")
+        # # reset the data loader pointer
+        # train_data_loader.reset(only_ptr=True)
         
-        
+        # get lr, max_steps, and cur_grad_acc_steps
+        learning_rate, max_steps, cur_grad_acc_steps = get_lr_and_max_steps(num_filtered_examples, batch_boundary_list, total_batch_size_list, learning_rate_list, train_data_loader, micro_batch_size)
+        # update the learning rate in the optimizer
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = learning_rate
+            
+        pretty_print(f"Training the model for {max_steps} steps...", title="Training loop")
         for step in range(max_steps):
             # start time    
             t0 = time.time()
@@ -327,11 +372,52 @@ if __name__ == '__main__':
             avg_token_entropy = (entropy_accum / total_response_tokens).item()
             # print the loss metrics
             dt = time.time() - t0
-            print(f"step: {step:0d} | loss: {loss_accum.item():.4f} | avg_entropy: {avg_token_entropy:.4f} | lr: {learning_rate:.4e} | norm: {norm.item():.4f} | dt: {dt:.2f}s")
+            print(f"step: {train_step_counter:04d} | loss: {loss_accum.item():.4f} | avg_entropy: {avg_token_entropy:.4f} | lr: {learning_rate:.4e} | norm: {norm.item():.4f} | dt: {dt:.2f}s")
+            train_step_counter += 1
             
-           
-            torch.cuda.empty_cache()
+            train_log_dict = {
+                "step_train": train_step_counter,
+                "train/loss": loss_accum.item(),
+                "train/avg_token_entropy": avg_token_entropy,
+                "train/lr": learning_rate,
+                "train/norm": norm.item(),
+                "train/dt": dt
+            }
+            wandb.log(train_log_dict)
 
-# # Save the evaluation examples table
-# if run_intermediate_eval:
-#     wandb.log({"eval/examples": val_examples_table})
+        # load the model weights to the vLLM model
+        pretty_print(f"Loading the model weights from the previous expert iteration to vLLM model...", title="vLLM model loading")
+        load_policy_into_vllm_instance(model, vllm_model)
+        
+        # run intermediate evaluation on the validation data
+        if run_intermediate_eval:
+            torch.cuda.empty_cache()
+            pretty_print(f"Evaluating the model on the validation data...", title="Validation data evaluation")
+            
+            # evaluate the model on the validation data
+            t_eval = time.time()
+            vllm_eval_results = evaluate_vllm(vllm_model, r1_zero_reward_fn, val_prompts, val_baseline_results, vllm_sampling_params_obj_eval)
+            eval_avg_loss, eval_avg_token_entropy, avg_correct_res_len, avg_incorrect_res_len = evaluate_val_data(model, val_prompts, vllm_eval_results["results"], val_batch_size)
+            dt = time.time() - t_eval
+
+            # print the evaluation metrics
+            print(f"exp_iter: {ei_step} | loss: {eval_avg_loss:.4f} | avg_entropy: {eval_avg_token_entropy:.4f} | avg_acc: {vllm_eval_results['accuracy']['avg_acc']:.4f} | avg_format_acc: {vllm_eval_results['accuracy']['avg_format_acc']:.4f} | avg_correct_res_len: {avg_correct_res_len:.2f} | avg_incorrect_res_len: {avg_incorrect_res_len:.2f} | dt: {dt:.2f}s")
+            
+            eval_log_dict = {
+                "step_eval": ei_step,
+                "eval_ei/loss": eval_avg_loss,
+                "eval_ei/avg_token_entropy": eval_avg_token_entropy,
+                "eval_ei/avg_acc": vllm_eval_results['accuracy']['avg_acc'],
+                "eval_ei/avg_format_acc": vllm_eval_results['accuracy']['avg_format_acc'],
+                "eval_ei/avg_correct_res_len": avg_correct_res_len,
+                "eval_ei/avg_incorrect_res_len": avg_incorrect_res_len,
+                "eval_ei/dt": dt
+            }
+            wandb.log(eval_log_dict)
+            torch.cuda.empty_cache()
+        
+        if ei_step > 0:
+            ckpt_dir = output_dir + f"/checkpoint_ei_{ei_step}"
+            print(f"Saving the model weights to {ckpt_dir}...")
+            model.save_pretrained(ckpt_dir)
+            tokenizer.save_pretrained(ckpt_dir)

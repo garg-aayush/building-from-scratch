@@ -10,11 +10,14 @@ from vllm.model_executor import set_random_seed as vllm_set_random_seed
 # -------------------------------------------------------------#
 # Pretty print the input_config
 # -------------------------------------------------------------#
-def pretty_print(input_config: dict | list | str, title: str = "Config") -> None:
+def pretty_print(input_config: dict | list | str, title: str = "Config", is_super_title: bool = False) -> None:
     """
     Pretty print the input_config.
     """
-    print(f"{'-'*100}\n{title}:\n{'-'*100}")
+    if is_super_title:
+        print(f"{'-'*100}\n{title}:\n{'-'*100}")
+    else:
+        print("="*25 + f" {title} " + "="*25)
     if isinstance(input_config, dict):
         for k,v in input_config.items():
             if isinstance(v, dict):
@@ -109,7 +112,7 @@ def load_policy_into_vllm_instance(policy: PreTrainedModel, llm: LLM):
 # -------------------------------------------------------------#
 # Prepare the validation data
 # -------------------------------------------------------------#
-def prepare_val_data(val_data_file: str, prompt_template_file: str, max_val_examples: int=100):
+def prepare_val_data(val_data_file: str, prompt_template_file: str, max_val_examples: int=0):
     """
     Prepare the validation data.
     """
@@ -123,6 +126,8 @@ def prepare_val_data(val_data_file: str, prompt_template_file: str, max_val_exam
     total_val_examples = len(val_data)
     if max_val_examples > total_val_examples:
         print(f"Warning: max_val_examples={max_val_examples} is greater than the total_val_examples={total_val_examples}, using all {total_val_examples} examples")
+    elif max_val_examples <= 0:
+        val_data = val_data
     else:
         val_data = random.sample(val_data, max_val_examples)
     
@@ -138,3 +143,86 @@ def prepare_val_data(val_data_file: str, prompt_template_file: str, max_val_exam
     ])
         
     return list(prompts), baseline_results
+
+# -------------------------------------------------------------#
+# Create the filtered data
+# -------------------------------------------------------------#
+def create_ei_filtered_data(prompt_template_file: str, data_file: str, max_examples: int=512, 
+                            vllm_model: LLM=None, vllm_sampling_params_obj: SamplingParams=None,
+                            reward_fn: Callable[[str, str], dict[str, float]]=None, filtered_data_file: str=None):
+    # sample a batch of max_examples examples from the data
+    prompts, examples = sample_batch(prompt_template_file, data_file, max_examples)
+    print(f"Sampled {len(prompts)} examples from the data")
+    
+    # filter the examples using the vLLM model
+    filtered_train_results, filtered_acc_dict = filter_data(vllm_model, reward_fn, prompts, examples, vllm_sampling_params_obj)
+    pretty_print(filtered_train_results[0], title="Example filtered train result")
+    print(f"Filtered {len(filtered_train_results)} examples out of {len(examples)} examples")
+    print(f"Accuracy: {filtered_acc_dict['avg_acc']:.4f}, Format accuracy: {filtered_acc_dict['avg_format_acc']:.4f}")
+    
+    # save the filtered data to a jsonl file list of dicts
+    with open(filtered_data_file, "w") as f:
+        json.dump(filtered_train_results, f, indent=2)
+    return filtered_data_file, len(filtered_train_results)
+
+def sample_batch(prompt_template_file: str, data_file: str, max_examples: int=512):
+    # read the data file and prompt template file
+    with open(prompt_template_file, "r") as f:
+        prompt_template = f.read()
+    with open(data_file, "r") as f:
+        data = json.load(f)
+
+    # sample the validation data
+    total_examples = len(data)
+    if max_examples > total_examples:
+        print(f"Warning: max_examples={max_examples} is greater than the total_examples={total_examples}, using all {total_examples} examples")
+    else:
+        data = random.sample(data, max_examples)
+    
+    # create the list of prompts and baseline results dict
+    prompts, examples = zip(*[
+        (prompt_template.format(question=data[i]["problem"]), 
+        {
+            "problem": data[i]["problem"], 
+            "reasoning_trace": data[i]["reasoning_trace"],
+            "expected_answer": data[i]["expected_answer"],
+            "extracted_answer": data[i]["extracted_answer"]
+        }
+        )
+        for i in range(len(data))
+    ])
+    return list(prompts), list(examples)
+
+def filter_data(
+    vllm_model: LLM,
+    reward_fn: Callable[[str, str], dict[str, float]],
+    prompts: List[str],
+    results: List[dict],
+    sampling_params: SamplingParams
+) -> None:
+    
+    # generate the prompts
+    outputs = vllm_model.generate(prompts, sampling_params)
+    
+    # calculate the reward using the reward function
+    # and add the outputs to the baseline results
+    acc_dict = {"avg_acc": 0.0,
+                "avg_format_acc": 0.0,
+                }
+    filtered_results = []
+    for i, (output_list, result) in enumerate(zip(outputs, results)):
+        for j, output in enumerate(output_list.outputs):
+            output_text = output.text
+            reward = reward_fn(output_text, str(result["expected_answer"]).strip())
+            if reward["reward"] > 0.0:
+                filtered_results.append(result)
+                acc_dict["avg_acc"] += reward["reward"]
+                acc_dict["avg_format_acc"] += reward["format_reward"]
+                break
+    total_examples = len(results)
+    total_filtered_examples = len(filtered_results)
+    for key in acc_dict.keys():
+        acc_dict[key] /= total_examples
+    
+    return filtered_results, acc_dict
+
