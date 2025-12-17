@@ -149,13 +149,13 @@ def prepare_val_data(val_data_file: str, prompt_template_file: str, max_val_exam
 # -------------------------------------------------------------#
 def create_ei_filtered_data(prompt_template_file: str, data_file: str, max_examples: int=512, 
                             vllm_model: LLM=None, vllm_sampling_params_obj: SamplingParams=None,
-                            reward_fn: Callable[[str, str], dict[str, float]]=None, filtered_data_file: str=None):
+                            reward_fn: Callable[[str, str], dict[str, float]]=None, filtered_data_file: str=None, use_generated_reasoning: bool=False):
     # sample a batch of max_examples examples from the data
     prompts, examples = sample_batch(prompt_template_file, data_file, max_examples)
     print(f"Sampled {len(prompts)} examples from the data")
     
     # filter the examples using the vLLM model
-    filtered_train_results, filtered_acc_dict = filter_data(vllm_model, reward_fn, prompts, examples, vllm_sampling_params_obj)
+    filtered_train_results, filtered_acc_dict = filter_data(vllm_model, reward_fn, prompts, examples, vllm_sampling_params_obj, use_generated_reasoning)
     pretty_print(filtered_train_results[0], title="Example filtered train result")
     print(f"Filtered {len(filtered_train_results)} examples out of {len(examples)} examples")
     print(f"Accuracy: {filtered_acc_dict['avg_acc']:.4f}, Format accuracy: {filtered_acc_dict['avg_format_acc']:.4f}")
@@ -198,7 +198,8 @@ def filter_data(
     reward_fn: Callable[[str, str], dict[str, float]],
     prompts: List[str],
     results: List[dict],
-    sampling_params: SamplingParams
+    sampling_params: SamplingParams,
+    use_generated_reasoning: bool=False
 ) -> None:
     
     # generate the prompts
@@ -215,6 +216,8 @@ def filter_data(
             output_text = output.text
             reward = reward_fn(output_text, str(result["expected_answer"]).strip())
             if reward["reward"] > 0.0:
+                if use_generated_reasoning:
+                    result["reasoning_trace"] = output.text
                 filtered_results.append(result)
                 acc_dict["avg_acc"] += reward["reward"]
                 acc_dict["avg_format_acc"] += reward["format_reward"]
