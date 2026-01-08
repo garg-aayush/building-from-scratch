@@ -38,3 +38,26 @@ def per_instance_dpo_loss(
     loss = -F.logsigmoid(beta * (chosen_logp_policy - chosen_logp_ref - rejected_logp_policy + rejected_logp_ref))
     
     return loss
+
+@torch.no_grad()
+def dpo_pref_accuracy(
+    policy_model: PreTrainedModel,
+    tokenizer: AutoTokenizer, 
+    prompt: str, chosen_response: str, rejected_response: str, prompt_template: str) -> bool:
+    """
+    Compute the DPO preference accuracy for a single instance.
+    """
+    
+    # combine the prompt and responses with the prompt template
+    chosen_prompt = prompt_template.format(instruction=prompt, response=chosen_response)
+    rejected_prompt = prompt_template.format(instruction=prompt, response=rejected_response)
+    
+    # tokenize the prompts
+    chosen_toks = tokenizer(chosen_prompt, return_tensors="pt").input_ids.to(policy_model.device)
+    rejected_toks = tokenizer(rejected_prompt, return_tensors="pt").input_ids.to(policy_model.device)
+    
+    # logp
+    chosen_logp_policy = -policy_model(input_ids=chosen_toks, labels=chosen_toks).loss * (chosen_toks.shape[-1] - 1)
+    rejected_logp_policy = -policy_model(input_ids=rejected_toks, labels=rejected_toks).loss * (rejected_toks.shape[-1] - 1)
+    
+    return (chosen_logp_policy > rejected_logp_policy).item()
