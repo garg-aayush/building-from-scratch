@@ -20,23 +20,24 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # wandb tracking setup
 seed = 1337
 wandb_project = "dpo"
-wandb_run_name = "test_run"
+wandb_run_name = "run_dpo2"
 
 # Model config
-model_name = "/home/models/llama31-8b"
+model_name = "/root/DATA/CHKPT/llama31-8b-sft-nomask/checkpoint_6726"
 
 dtype = "bfloat16"  # "float16" or "bfloat16"
 attention_type = "flash_attention_2"
 use_compile = False # for CUDA 2.6, H100 false otherwise OOMs error, RTX6000 CUDA 2.8 true 
+use_checkpointing = True # to make it run on H100 (single gpu)
 
 # Device
 device_policy = "cuda:0"
-device_ref = "cuda:1"
+device_ref = "cuda:0"
 device_type = "cuda" if device_policy.startswith("cuda") else "cpu"
 
 # Data params
-data_file = "data/examples.jsonl"
-prompt_template_file = "data/alpaca_sft.prompt"
+data_file = "/root/DATA/examples.jsonl"
+prompt_template_file = "/root/building-from-scratch/dpo/data/alpaca_sft.prompt"
 num_val = 500  # 1% of ~50k examples
 
 # Training hyperparameters
@@ -53,9 +54,9 @@ cache_clear_interval = 100
 # DPO-specific hyperparameters
 beta = 0.1  # KL penalty coefficient
 # Eval params
-eval_interval = 100
+eval_interval = 50
 # Checkpointing & logging
-output_dir = f"results/dpo/{wandb_run_name}"
+output_dir = f"/root/RESULTS/dpo/{wandb_run_name}"
 
 # -------------------------------------------------------------#
 # Seed and precision setup
@@ -138,6 +139,10 @@ for param in ref_model.parameters():
 if use_compile:
     policy_model = torch.compile(policy_model)
     ref_model = torch.compile(ref_model)
+if use_checkpointing:
+    print("Enabling checkpointing for policy model...")
+    policy_model.gradient_checkpointing_enable()
+    # ref_model.gradient_checkpointing_enable()
 
 # -------------------------------------------------------------#
 # Setup the datasets
@@ -208,7 +213,7 @@ def evaluate_val_data(policy_model, val_dataset, prompt_template, tokenizer):
             prompt=example['prompt'],
             chosen_response=example['chosen_response'],
             rejected_response=example['rejected_response'],
-            prompt_template=prompt_template
+            prompt_template=prompt_template,
         )
         total_correct += int(correct)
         total_examples += 1
