@@ -29,55 +29,53 @@ import argparse
 # Input params
 # -------------------------------------------------------------#
 # wandb tracking setup
-seed = 1337
-wandb_project = "expert-iter"
+seed = 1337  # random seed for reproducibility
+wandb_project = "expert-iter"  # wandb project name
 
 # Model config
-model_name = "/home/qwen/"
-# model_name = "/home/RESULTS/qwen-2.5-math-sft-filtered/checkpoint_38"
+model_name = "/root/qwen/"  # path to the model checkpoint
 dtype = "bfloat16"  # "float16" or "bfloat16"
 attention_type = "flash_attention_2"
-use_compile = True
+use_compile = True  # whether to use torch.compile for the model
 
 # Device & vLLM config
 device = "cuda:0"  # please use a GPU for training
 device_type = "cuda" if device.startswith("cuda") else "cpu"
 
 # train and val data
-train_data_file = "/home/DATA/EXPERT-ITER/sft_gpt-oss-120b_filtered.jsonl"
-prompt_template_file = "/home/DATA/EXPERT-ITER/r1_zero.prompt"
-val_data_file = "/home/DATA/EXPERT-ITER/val.jsonl"
-tmp_dir = "/tmp"
-use_generated_reasoning = True
+train_data_file = "/root/DATA/EXPERT-ITER/sft_gpt-oss-120b_filtered.jsonl"  # path to the training data
+prompt_template_file = "/root/DATA/EXPERT-ITER/r1_zero.prompt"  # path to the prompt template file
+val_data_file = "/root/DATA/EXPERT-ITER/val.jsonl"  # path to the validation data
+tmp_dir = "/root/tmp"  # temporary directory for intermediate files
+use_generated_reasoning = True  # whether to use generated reasoning in training data
 
 # Training hyperparameters
-total_batch_size_list = [8, 32, 64]
-# learning_rate_list = [1.7e-5, 3.53e-5, 5e-5] # 5e-5 max lr and follow sqrt(2) rule for learning rate scaling
-learning_rate_list = [3.5e-5, 5e-5, 7e-5] # 1e-4 for batch size of 128 and follow sqrt(2) rule for learning rate scaling 
-batch_boundary_list = [24, 128]
-micro_batch_size = 2
-val_batch_size = 4
-grad_norm_clip = 1.0
+total_batch_size_list = [8, 32, 64]  # batch sizes for different data sizes
+learning_rate_list = [3.5e-5, 5e-5, 7e-5]  # 1e-4 for batch size of 128 and follow sqrt(2) rule for learning rate scaling 
+batch_boundary_list = [24, 128]  # boundaries to select batch size and learning rate
+micro_batch_size = 2  # micro batch size for gradient accumulation
+val_batch_size = 4  # batch size for validation
+grad_norm_clip = 1.0  # gradient norm clipping value
 use_per_token_loss = True # use per-token loss instead of per-sequence loss
 normalize_constant = 1.0 # normalization constant for the loss
-batch_per_ei = 512
-num_ei = 5
-num_rollouts = 2 # number of outputs to generate for each example
-wandb_run_name = f"run_D{num_ei}_R{num_rollouts}"
-eval_ei_steps = [1, 2, 3, 4, 5]
-save_ei_steps = [3, 5]
-num_epochs = 1
+batch_per_ei = 512  # number of examples to sample per expert iteration
+num_ei = 5  # number of expert iterations
+num_rollouts = 4  # number of outputs to generate for each example
+wandb_run_name = f"run_D{num_ei}_R{num_rollouts}"  # wandb run name
+eval_ei_steps = [1, 2, 3, 4, 5]  # expert iteration steps to evaluate on
+save_ei_steps = [3, 5]  # expert iteration steps to save checkpoints
+num_epochs = 1  # number of epochs per expert iteration
 
 # Checkpointing & logging
-output_dir = f"/home/RESULTS/{wandb_run_name}"
-run_intermediate_eval = True # run intermediate evaluation on the validation set
-max_val_examples = 6000  # maximum number of validation examples to evaluate on
+output_dir = f"/root/RESULTS/{wandb_run_name}"  # output directory for checkpoints
+run_intermediate_eval = True  # run intermediate evaluation on the validation set
+max_val_examples = 1000  # maximum number of validation examples to evaluate on
 
 # vLLM config
 vllm_dtype = "bfloat16"  # vLLM expects string, not torch dtype
-vllm_gpu_memory_utilization = 0.2  # reserve 20% of the GPU memory
-vllm_max_model_len = 2048  # maximum model length
-vllm_max_num_seqs = 128  # maximum number of sequences
+vllm_gpu_memory_utilization = 0.2  # fraction of GPU memory to reserve for vLLM
+vllm_max_model_len = 2048  # maximum sequence length for the model
+vllm_max_num_seqs = 128  # maximum number of sequences to process in parallel
 vllm_sampling_params = {
     "temperature": 1.0,
     "top_p": 1.0,
@@ -130,17 +128,17 @@ if __name__ == '__main__':
     # parse the command line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_per_ei", type=int, default=512)
-    parser.add_argument("--num_rollouts", type=int, default=2)
-    parser.add_argument("--wandb_run_name", type=str, default="run_G2_R2")
+    parser.add_argument("--num_rollouts", type=int, default=4)
+    parser.add_argument("--wandb_run_name", type=str, default="run_D512_G5_R4")
     parser.add_argument("--num_epochs", type=int, default=1)
-    parser.add_argument("--model_name", type=str, default="/home/qwen/")
+    parser.add_argument("--model_name", type=str, default="/root/qwen/")
 
     args = parser.parse_args()
     batch_per_ei = args.batch_per_ei
     num_rollouts = args.num_rollouts
     wandb_run_name = args.wandb_run_name
     vllm_sampling_params["n"] = num_rollouts
-    output_dir = f"/home/RESULTS/{wandb_run_name}"
+    output_dir = f"/root/RESULTS/{wandb_run_name}"
     num_epochs = args.num_epochs
     model_name = args.model_name
     
@@ -243,22 +241,22 @@ if __name__ == '__main__':
     ei_step = 0
     train_step_counter = 0
     
-    # # evaluate the model on the validation data
-    # pretty_print(f"Evaluating the model on the validation data...", title="Validation data evaluation")
-    # t_eval = time.time()
-    # vllm_eval_results = evaluate_vllm(vllm_model, r1_zero_reward_fn, val_prompts, val_baseline_results, vllm_sampling_params_obj_eval)
-    # dt = time.time() - t_eval
-    # # print the evaluation metrics
-    # print(f"exp_iter: {ei_step} | avg_acc: {vllm_eval_results['accuracy']['avg_acc']:.4f} | avg_format_acc: {vllm_eval_results['accuracy']['avg_format_acc']:.4f} | dt: {dt:.2f}s")
-    # # log the evaluation metrics to wandb
-    # eval_log_dict = {
-    #             "step_eval": ei_step,
-    #             "eval_ei/avg_acc": vllm_eval_results['accuracy']['avg_acc'],
-    #             "eval_ei/avg_format_acc": vllm_eval_results['accuracy']['avg_format_acc'],
-    #             "eval_ei/dt": dt
-    #         }
-    # wandb.log(eval_log_dict)
-    # torch.cuda.empty_cache()
+    # evaluate the model on the validation data
+    pretty_print(f"Evaluating the model on the validation data...", title="Validation data evaluation")
+    t_eval = time.time()
+    vllm_eval_results = evaluate_vllm(vllm_model, r1_zero_reward_fn, val_prompts, val_baseline_results, vllm_sampling_params_obj_eval)
+    dt = time.time() - t_eval
+    # print the evaluation metrics
+    print(f"exp_iter: {ei_step} | avg_acc: {vllm_eval_results['accuracy']['avg_acc']:.4f} | avg_format_acc: {vllm_eval_results['accuracy']['avg_format_acc']:.4f} | dt: {dt:.2f}s")
+    # log the evaluation metrics to wandb
+    eval_log_dict = {
+                "step_eval": ei_step,
+                "eval_ei/avg_acc": vllm_eval_results['accuracy']['avg_acc'],
+                "eval_ei/avg_format_acc": vllm_eval_results['accuracy']['avg_format_acc'],
+                "eval_ei/dt": dt
+            }
+    wandb.log(eval_log_dict)
+    torch.cuda.empty_cache()
 
     for ei_step in range(1, num_ei + 1):
         pretty_print(f"Starting expert iteration {ei_step}...", title=f"Expert iteration {ei_step}", is_super_title=True)
@@ -268,6 +266,8 @@ if __name__ == '__main__':
         tmp_train_data_file = f"{tmp_dir}/tmp_{ei_step}.json"
         _, num_filtered_examples = create_ei_filtered_data(prompt_template_file, train_data_file, batch_per_ei, vllm_model, vllm_sampling_params_obj, r1_zero_reward_fn, tmp_train_data_file, use_generated_reasoning)
         print(f"Filtered data saved to {tmp_train_data_file}")
+        print(f"Expert iteration {ei_step}: {num_filtered_examples} examples filtered out of {batch_per_ei} sampled examples ({100*num_filtered_examples/batch_per_ei:.1f}%)")
+        wandb.log({"step_eval": ei_step, "eval_ei/num_filtered_examples": num_filtered_examples})
         
         # Setup the data loader
         pretty_print(f"Initializing the data loader...", title="Data loader initialization")
