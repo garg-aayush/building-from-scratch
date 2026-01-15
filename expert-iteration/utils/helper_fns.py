@@ -149,7 +149,7 @@ def prepare_val_data(val_data_file: str, prompt_template_file: str, max_val_exam
 # -------------------------------------------------------------#
 def create_ei_filtered_data(prompt_template_file: str, data_file: str, max_examples: int=512, 
                             vllm_model: LLM=None, vllm_sampling_params_obj: SamplingParams=None,
-                            reward_fn: Callable[[str, str], dict[str, float]]=None, filtered_data_file: str=None, use_generated_reasoning: bool=False):
+                            reward_fn: Callable[[str, str], dict[str, float]]=None, filtered_data_file: str=None, use_generated_reasoning: bool=True):
     # sample a batch of max_examples examples from the data
     prompts, examples = sample_batch(prompt_template_file, data_file, max_examples)
     print(f"Sampled {len(prompts)} examples from the data")
@@ -199,7 +199,7 @@ def filter_data(
     prompts: List[str],
     results: List[dict],
     sampling_params: SamplingParams,
-    use_generated_reasoning: bool=False
+    use_generated_reasoning: bool=True,
 ) -> None:
     
     # generate the prompts
@@ -221,7 +221,6 @@ def filter_data(
                 filtered_results.append(result)
                 acc_dict["avg_acc"] += reward["reward"]
                 acc_dict["avg_format_acc"] += reward["format_reward"]
-                break
     total_examples = len(results)
     total_filtered_examples = len(filtered_results)
     for key in acc_dict.keys():
