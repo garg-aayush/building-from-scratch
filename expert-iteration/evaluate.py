@@ -12,15 +12,15 @@ from vllm import LLM, SamplingParams
 # -------------------------------------------------------------#
 # Input params
 # -------------------------------------------------------------#
-val_file = "/home/DATA/EXPERT-ITER/val.jsonl"
-prompt_template_file = "/home/DATA/EXPERT-ITER/r1_zero.prompt"
+val_file = "/root/DATA/EXPERT-ITER/val.jsonl"
+prompt_template_file = "/root/DATA/EXPERT-ITER/r1_zero.prompt"
 save_only_accuracy = True
 
 # checkpoint configuration
-run_name = "run_S75_D1024_R2"
-repo_id = f"/home/RESULTS/{run_name}/checkpoint_step_75"
+run_name = "run_D512_G5_R2"
+repo_id = f"/root/RESULTS/{run_name}/checkpoint_ei_5"
 checkpoint_dir = "/tmp/"
-eval_file = f"/home/RESULTS/eval_acc_{run_name}.jsonl"
+eval_file = f"/root/RESULTS/eval_acc_{run_name}.jsonl"
 
 # model name
 model_name = f"{repo_id}"
