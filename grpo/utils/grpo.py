@@ -113,6 +113,20 @@ def compute_policy_gradient_loss(
     cliprange: float | None = None,
     clip: bool = True
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """
+    Compute the policy gradient loss.
+    Args:
+        policy_log_probs: Tensor of policy log probabilities (bs, seq_len).
+        loss_type: Type of loss to compute.
+        raw_rewards: Tensor of raw rewards (bs, 1).
+        advantages: Tensor of advantages (bs, 1).
+        old_log_probs: Tensor of old policy log probabilities (bs, seq_len).
+        cliprange: Clip ratio.
+        clip: Whether to clip the ratio.
+    Returns:
+        per token policy gradient loss (bs, seq_len)
+        metadata
+    """
     
     # assert loss_type
     assert loss_type in ["no_baseline", "reinforce_with_baseline", "grpo_clip", "grpo_no_clip"], f"Invalid loss type: {loss_type}"
@@ -132,3 +146,31 @@ def compute_policy_gradient_loss(
     assert cliprange is not None, f"cliprange is required for {loss_type} loss type"
     if loss_type == "grpo_clip":
         return compute_grpo_clip_loss(advantages, policy_log_probs, old_log_probs, cliprange, clip)
+
+def masked_mean(
+    tensor: torch.Tensor, 
+    mask: torch.Tensor,
+    dim: int | None = None
+    ) -> torch.Tensor:
+    """
+    Compute the mean of tensor along a given dimension, considering only those elements where
+    mask == 1.
+    Args:
+        tensor: Tensor to compute the mean of.
+        mask: Mask to consider only those elements where mask == 1.
+        dim: Dimension along which to compute the mean.
+    Returns:
+        Mean of tensor along the given dimension, considering only those elements where mask == 1.
+    """
+    return (tensor * mask).sum(dim=dim) / mask.sum(dim=dim)
+
+def masked_normalize(
+    tensor: torch.Tensor,
+    mask: torch.Tensor,
+    dim: int | None = None,
+    normalize_constant: float = 1.0,
+) -> torch.Tensor:
+    """Sum over a dimension and normalize by a constant,
+    considering only the elements with mask value 1.
+    """
+    return (tensor * mask).sum(dim=dim) / normalize_constant
