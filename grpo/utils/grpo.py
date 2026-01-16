@@ -174,3 +174,44 @@ def masked_normalize(
     considering only the elements with mask value 1.
     """
     return (tensor * mask).sum(dim=dim) / normalize_constant
+
+
+def grpo_microbatch_train_step(
+    policy_log_probs: torch.Tensor,
+    response_mask: torch.Tensor,
+    gradient_accumulation_steps: int,
+    loss_type: Literal["no_baseline", "reinforce_with_baseline", "grpo_clip", "grpo_no_clip"],
+    raw_rewards: torch.Tensor | None = None,
+    advantages: torch.Tensor | None = None,
+    old_log_probs: torch.Tensor | None = None,
+    cliprange: float | None = None,
+    clip: bool = True,
+    norm_mode: Literal["mean", "constant", "microbatch"] = "mean",
+    norm_constant: float | None = None
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """
+    """
+
+    # compute policy gradient loss
+    policy_gradient_loss, metadata = compute_policy_gradient_loss(policy_log_probs, loss_type, raw_rewards, advantages, old_log_probs, cliprange, clip)
+
+    # normalize
+    if norm_mode == "mean":
+        policy_gradient_loss = masked_mean(policy_gradient_loss, response_mask, dim=-1)
+    elif norm_mode == "constant":
+        assert norm_constant is not None, f"norm_constant is required for {norm_mode} norm mode"
+        policy_gradient_loss = masked_normalize(policy_gradient_loss, response_mask, dim=-1, normalize_constant=norm_constant)
+    elif norm_mode == "microbatch":
+        # normalize by the longest response in the batch
+        norm_constant = response_mask.sum(dim=-1).max().item()
+        policy_gradient_loss = masked_normalize(policy_gradient_loss, response_mask, dim=0, normalize_constant=norm_constant)
+    else:
+        raise ValueError(f"Invalid norm mode: {norm_mode}")
+    
+    # gradient accumulation
+    policy_gradient_loss = policy_gradient_loss.mean() / gradient_accumulation_steps
+
+    # backpropagate
+    policy_gradient_loss.backward()
+
+    return policy_gradient_loss, metadata
