@@ -60,3 +60,41 @@ def compute_naive_policy_gradient_loss(
     """
     # shape: (bs, 1) * (bs, seq_len) -> (bs, seq_len)
     return -(raw_rewards_or_advantages * policy_log_probs)
+
+
+def compute_grpo_clip_loss(
+    advantages: torch.Tensor,
+    policy_log_probs: torch.Tensor,
+    old_log_probs: torch.Tensor,
+    cliprange: float
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """
+    Compute the GRPO clip loss.
+    Args:
+        advantages: Tensor of advantages (bs, 1).
+        policy_log_probs: Tensor of policy log probabilities (bs, seq_len).
+        old_log_probs: Tensor of old policy log probabilities (bs, seq_len).
+        cliprange: Clip ratio.
+    Returns:
+        per token grpo clipped loss (bs, seq_len)
+        metadata
+    """
+    # compute ratio, torch.exp as it is log probs
+    unclipped_ratio = torch.exp(policy_log_probs - old_log_probs)
+    
+    # compute clipped ratio
+    clipped_ratio = torch.clamp(unclipped_ratio, 1.0 - cliprange, 1.0 + cliprange)
+    
+    # compute loss
+    adv_unclipped_ratio = advantages * unclipped_ratio
+    adv_clipped_ratio = advantages * clipped_ratio
+    loss = -torch.min(adv_unclipped_ratio, adv_clipped_ratio)
+    
+    # check if each token was clipped
+    clipped = adv_clipped_ratio < adv_unclipped_ratio
+    metadata = {
+        'clipped': clipped,
+    }
+    
+    return loss, metadata
+
