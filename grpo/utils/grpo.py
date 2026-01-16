@@ -66,7 +66,8 @@ def compute_grpo_clip_loss(
     advantages: torch.Tensor,
     policy_log_probs: torch.Tensor,
     old_log_probs: torch.Tensor,
-    cliprange: float
+    cliprange: float,
+    clip: bool = True
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """
     Compute the GRPO clip loss.
@@ -75,6 +76,7 @@ def compute_grpo_clip_loss(
         policy_log_probs: Tensor of policy log probabilities (bs, seq_len).
         old_log_probs: Tensor of old policy log probabilities (bs, seq_len).
         cliprange: Clip ratio.
+        clip: Whether to clip the ratio.
     Returns:
         per token grpo clipped loss (bs, seq_len)
         metadata
@@ -82,9 +84,12 @@ def compute_grpo_clip_loss(
     # compute ratio, torch.exp as it is log probs
     unclipped_ratio = torch.exp(policy_log_probs - old_log_probs)
     
+    if not clip:
+        return -(advantages * unclipped_ratio), {'clipped': False}
+    
     # compute clipped ratio
     clipped_ratio = torch.clamp(unclipped_ratio, 1.0 - cliprange, 1.0 + cliprange)
-    
+
     # compute loss
     adv_unclipped_ratio = advantages * unclipped_ratio
     adv_clipped_ratio = advantages * clipped_ratio
@@ -98,3 +103,32 @@ def compute_grpo_clip_loss(
     
     return loss, metadata
 
+
+def compute_policy_gradient_loss(
+    policy_log_probs: torch.Tensor,
+    loss_type: Literal["no_baseline", "reinforce_with_baseline", "grpo_clip", "grpo_no_clip"],
+    raw_rewards: torch.Tensor | None = None,
+    advantages: torch.Tensor | None = None,
+    old_log_probs: torch.Tensor | None = None,
+    cliprange: float | None = None,
+    clip: bool = True
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    
+    # assert loss_type
+    assert loss_type in ["no_baseline", "reinforce_with_baseline", "grpo_clip", "grpo_no_clip"], f"Invalid loss type: {loss_type}"
+
+    if loss_type == "no_baseline":
+        assert raw_rewards is not None, f"raw_rewards is required for {loss_type} loss type"
+        return compute_naive_policy_gradient_loss(raw_rewards, policy_log_probs), {}
+    
+    assert advantages is not None, f"advantages is required for {loss_type} loss type"
+    if loss_type == "reinforce_with_baseline":
+        return compute_naive_policy_gradient_loss(advantages, policy_log_probs), {}
+    
+    assert old_log_probs is not None, f"old_log_probs is required for {loss_type} loss type"
+    if loss_type == "grpo_no_clip":
+        return compute_grpo_clip_loss(advantages, policy_log_probs, old_log_probs, cliprange, clip)
+    
+    assert cliprange is not None, f"cliprange is required for {loss_type} loss type"
+    if loss_type == "grpo_clip":
+        return compute_grpo_clip_loss(advantages, policy_log_probs, old_log_probs, cliprange, clip)
