@@ -44,3 +44,19 @@ def compute_group_normalized_rewards(
     advantages = rearrange(grp_advantages, '(n_grp group_size) -> n_grp group_size')
     
     return advantages, raw_rewards, {'mean': mean, 'std': std}
+
+
+def compute_naive_policy_gradient_loss(
+    raw_rewards_or_advantages: torch.Tensor,
+    policy_log_probs: torch.Tensor
+) -> torch.Tensor:
+    """
+    Compute the naive policy gradient loss.
+    Args:
+        raw_rewards_or_advantages: scalar reward/advantage per rollout (bs, 1).
+        policy_log_probs: log probabilities of the tokens in the rollout (bs, seq_len).
+    Returns:
+        per token policy gradient loss (bs, seq_len).
+    """
+    # shape: (bs, 1) * (bs, seq_len) -> (bs, seq_len)
+    return -(raw_rewards_or_advantages * policy_log_probs)
