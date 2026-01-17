@@ -1,6 +1,6 @@
-
 import torch
-from typing import Callable, List
+from typing import Callable, List, Tuple
+from typing_extensions import Literal
 from einops import rearrange
 
 def compute_group_normalized_rewards(
@@ -27,9 +27,9 @@ def compute_group_normalized_rewards(
     # list of dict of (format_reward, answer_reward, reward) for each rollout
     rewards = [reward_fn(response, ground_truth) for response, ground_truth in zip(rollout_responses, repeated_ground_truths)]
 
-    # tensor -> reshape from n_grp, group_size: (n_grp X group_size)
+    # tensor -> reshape from n_grp * group_size to (n_grp, group_size)
     raw_rewards = torch.tensor([r['reward'] for r in rewards])
-    grp_rewards = rearrange(raw_rewards, 'n_grp group_size -> (n_grp group_size)', group_size=group_size)
+    grp_rewards = rearrange(raw_rewards, '(n_grp group_size) -> n_grp group_size', group_size=group_size)
 
     # compute mean and std (n_grp,)
     mean = grp_rewards.mean(dim=-1) 
@@ -40,16 +40,15 @@ def compute_group_normalized_rewards(
     if normalize_by_std:
         grp_advantages = grp_advantages / (std.unsqueeze(-1) + advantage_eps)
 
-    # reshape from (n_grp X group_size) -> n_grp, group_size
-    advantages = rearrange(grp_advantages, '(n_grp group_size) -> n_grp group_size')
+    # reshape from (n_grp, group_size) -> n_grp * group_size
+    advantages = rearrange(grp_advantages, 'n_grp group_size -> (n_grp group_size)', group_size=group_size)
     
     return advantages, raw_rewards, {'mean': mean, 'std': std}
 
 
 def compute_naive_policy_gradient_loss(
     raw_rewards_or_advantages: torch.Tensor,
-    policy_log_probs: torch.Tensor
-) -> torch.Tensor:
+    policy_log_probs: torch.Tensor) -> torch.Tensor:
     """
     Compute the naive policy gradient loss.
     Args:
@@ -67,8 +66,7 @@ def compute_grpo_clip_loss(
     policy_log_probs: torch.Tensor,
     old_log_probs: torch.Tensor,
     cliprange: float,
-    clip: bool = True
-) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    clip: bool = True) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """
     Compute the GRPO clip loss.
     Args:
@@ -111,8 +109,7 @@ def compute_policy_gradient_loss(
     advantages: torch.Tensor | None = None,
     old_log_probs: torch.Tensor | None = None,
     cliprange: float | None = None,
-    clip: bool = True
-) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    clip: bool = True) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """
     Compute the policy gradient loss.
     Args:
@@ -168,13 +165,11 @@ def masked_normalize(
     tensor: torch.Tensor,
     mask: torch.Tensor,
     dim: int | None = None,
-    normalize_constant: float = 1.0,
-) -> torch.Tensor:
+    normalize_constant: float = 1.0,) -> torch.Tensor:
     """Sum over a dimension and normalize by a constant,
     considering only the elements with mask value 1.
     """
     return (tensor * mask).sum(dim=dim) / normalize_constant
-
 
 def grpo_microbatch_train_step(
     policy_log_probs: torch.Tensor,
@@ -187,8 +182,7 @@ def grpo_microbatch_train_step(
     cliprange: float | None = None,
     clip: bool = True,
     norm_mode: Literal["mean", "constant", "microbatch"] = "mean",
-    norm_constant: float | None = None
-) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    norm_constant: float | None = None) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """
     """
 
