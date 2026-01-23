@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 320">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#6366f1"/>
+    </marker>
+    <marker id="arrowhead-gray" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#9ca3af"/>
+    </marker>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="700" height="320" fill="#fafafa"/>
+  
+  <!-- Title -->
+  <text x="350" y="35" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#1f2937">Expert Iteration Loop</text>
+  
+  <!-- Box 1: Generate -->
+  <rect x="50" y="80" width="160" height="100" rx="8" fill="#dbeafe" stroke="#3b82f6" stroke-width="2"/>
+  <text x="130" y="115" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#1e40af">GENERATE</text>
+  <text x="130" y="138" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#1e40af">Sample G outputs</text>
+  <text x="130" y="155" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#1e40af">from policy π</text>
+  <text x="130" y="172" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#1e40af">for each question</text>
+  
+  <!-- Arrow 1 to 2 -->
+  <line x1="210" y1="130" x2="255" y2="130" stroke="#6366f1" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Box 2: Filter -->
+  <rect x="270" y="80" width="160" height="100" rx="8" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+  <text x="350" y="115" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#b45309">FILTER</text>
+  <text x="350" y="138" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#b45309">Keep only outputs</text>
+  <text x="350" y="155" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#b45309">with R(q, o) = 1</text>
+  <text x="350" y="172" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#b45309">(correct answers)</text>
+  
+  <!-- Arrow 2 to 3 -->
+  <line x1="430" y1="130" x2="475" y2="130" stroke="#6366f1" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Box 3: Finetune -->
+  <rect x="490" y="80" width="160" height="100" rx="8" fill="#dcfce7" stroke="#22c55e" stroke-width="2"/>
+  <text x="570" y="115" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#166534">FINETUNE</text>
+  <text x="570" y="138" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#166534">SFT on filtered</text>
+  <text x="570" y="155" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#166534">(question, output)</text>
+  <text x="570" y="172" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#166534">pairs</text>
+  
+  <!-- Feedback loop arrow -->
+  <path d="M 570 180 L 570 250 L 130 250 L 130 180" fill="none" stroke="#9ca3af" stroke-width="2" stroke-dasharray="6,4"/>
+  <polygon points="130,185 125,195 135,195" fill="#9ca3af"/>
+  
+  <!-- Loop label -->
+  <text x="350" y="275" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#6b7280" font-style="italic">Repeat with improved π</text>
+  
+  <!-- Policy symbol -->
+  <circle cx="130" cy="250" r="18" fill="#f3e8ff" stroke="#a855f7" stroke-width="2"/>
+  <text x="130" y="255" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#7c3aed">π</text>
+  
+</svg>
