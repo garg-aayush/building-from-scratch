@@ -27,7 +27,9 @@ Expert Iteration was first introduced by [Anthony et. al. (2017)](https://arxiv.
 
 I see Expert Iteration as **SFT on self-generated, filtered data, repeated iteratively**:
 
-![Expert Iteration Diagram](plots/expert-iteration-diagram.png)
+<p align="center">
+  <img src="plots/expert-iteration-diagram.png" alt="Expert Iteration Diagram" width="70%">
+</p>
 
 ## Experiments
 
@@ -59,7 +61,9 @@ Each iteration samples D questions, generates R candidate solutions per question
 
 The number of filtered examples varies significantly across iterations in exp-iter with early iterations filtering fewer correct solutions. This makes learning rate selection important.
 
-![Learning Rate Sweep](plots/lr_sweep_ei_acc.png)
+<p align="center">
+  <img src="plots/lr_sweep_ei_acc.png" alt="Learning Rate Sweep" width="70%">
+</p>
 
 The best way to handle this is an **adaptive scheme** that scales both learning rate and batch size:
 
@@ -74,7 +78,9 @@ The best way to handle this is an **adaptive scheme** that scales both learning 
 
 This experiment compares the effect of single vs multiple rollouts on validation accuracy.
 
-![Sampling Strategy Comparison](plots/sampling_strategy_ei_acc.png)
+<p align="center">
+  <img src="plots/sampling_strategy_ei_acc.png" alt="Sampling Strategy Comparison" width="70%">
+</p>
 
 Here, single-trace refers to keeping only one trace per question, while multi-trace refers to keeping all correct traces per question in sampling. Multi-trace sampling reaches higher accuracy than single-trace as diverse reasoning paths provide a richer training signal. 
 
