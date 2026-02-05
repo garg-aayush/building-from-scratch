@@ -1,7 +1,9 @@
-import torch
 from typing import Callable, List, Tuple
-from typing_extensions import Literal
+
+import torch
 from einops import rearrange
+from typing_extensions import Literal
+
 
 def compute_group_normalized_rewards(
     reward_fn: Callable[[str, str], dict[str, float]],
@@ -184,6 +186,19 @@ def grpo_microbatch_train_step(
     norm_mode: Literal["mean", "constant", "microbatch"] = "mean",
     norm_constant: float | None = None) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """
+    Compute the GRPO microbatch train step.
+    Args:
+        policy_log_probs: Tensor of policy log probabilities (bs, seq_len).
+        response_mask: Tensor of response mask (bs, seq_len).
+        gradient_accumulation_steps: int, the number of gradient accumulation steps.
+        loss_type: Type of loss to compute.
+        raw_rewards: Tensor of raw rewards (bs, 1).
+        advantages: Tensor of advantages (bs, 1).
+        old_log_probs: Tensor of old policy log probabilities (bs, seq_len).
+        cliprange: Clip ratio.
+        clip: Whether to clip the ratio.
+        norm_mode: Mode of normalization.
+        norm_constant: Constant to normalize by.
     """
 
     # compute policy gradient loss
