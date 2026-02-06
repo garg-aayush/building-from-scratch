@@ -5,7 +5,7 @@ from configs.defaults import Config
 from omegaconf import OmegaConf
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from utils.constants import DEFAULT_CONFIG, DTYPE_MAPPING
-from utils.helper import init_vllm, pretty_print, set_seed
+from utils.helper import init_vllm, load_dataset, pretty_print, set_seed
 
 config_path = "/home/aayush/repos/building-from-scratch/grpo/configs/dummy.yaml"
 
@@ -26,6 +26,24 @@ pretty_print(f"Setting the seed to {config.training.seed} and using tf32 precisi
 set_seed(config.training.seed)
 torch.set_float32_matmul_precision("high") # use tf32
 
+# -------------------------------------------------------------#
+# Load train and val dataset
+# -------------------------------------------------------------#
+pretty_print(None, title="Load datasets")
+
+pretty_print(f"Loading prompt template from {config.paths.prompt_template_file}...")
+prompt_template = load_dataset(data_file=config.paths.prompt_template_file, data_type='prompt')
+pretty_print(prompt_template, title="Prompt template", is_sub_title=True)
+
+pretty_print(f"Loading train dataset from {config.paths.train_data_file}...")
+train_dataset = load_dataset(data_file=config.paths.train_data_file, data_type='train')
+pretty_print(f"Train dataset size: {len(train_dataset)}", title="Train dataset", is_sub_title=True)
+pretty_print(train_dataset[:5])
+
+pretty_print(f"Loading val dataset from {config.paths.val_data_file}...")
+val_dataset = load_dataset(data_file=config.paths.val_data_file, data_type='val')
+pretty_print(f"Val dataset size: {len(val_dataset)}", title="Val dataset", is_sub_title=True)
+pretty_print(val_dataset[:5])
 
 # -------------------------------------------------------------#
 # Initialize the vLLM model

@@ -22,13 +22,13 @@ def set_seed(seed: int):
 # -------------------------------------------------------------#
 # Pretty print the input_config
 # -------------------------------------------------------------#
-def pretty_print(input_config: dict | list | str | None, title: str | None = None, is_super_title: bool = False) -> None:
+def pretty_print(input_config: dict | list | str | None, title: str | None = None, is_sub_title: bool = False) -> None:
     """
     Pretty print the input_config.
     """
     if title is not None:
-        if is_super_title:
-            print(f"{'-'*100}\n{title}:\n{'-'*100}")
+        if is_sub_title:
+            print(f"{'-'*30}\n{title}:\n{'-'*30}")
         else:
             print("="*25 + f" {title} " + "="*25)
     if isinstance(input_config, dict):
@@ -74,3 +74,15 @@ def init_vllm(seed: int, cfg: Config):
     }
     pretty_print(vllm_init_params, title="vLLM model initialization parameters")
     return LLM(**vllm_init_params)
+
+# -------------------------------------------------------------#
+# functions to load the dataset
+# -------------------------------------------------------------#
+def load_dataset(data_file: str, data_type: str='train', prompt_template: str=None):
+    with open(data_file, 'r') as f:
+        if data_type in ['train', 'val']:
+            return [json.loads(line) for line in f]
+        elif data_type == 'prompt':
+            return f.read()
+        else:
+            raise ValueError(f"Invalid data type: {data_type}")
