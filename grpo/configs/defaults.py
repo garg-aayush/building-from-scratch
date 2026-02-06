@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Literal
+from typing import List
 
 from omegaconf import OmegaConf
 
@@ -36,18 +36,18 @@ class TrainingConfig:
     top_p: float = 1.0
     min_tokens: int = 4
     max_tokens: int = 1024
-    stop: List[str] = ["</answer>"]
+    stop: List[str] = field(default_factory=lambda: ["</answer>"])
     include_stop_str_in_output: bool = True
     
     # GRPO parameters
     n_grpo_steps: int = 200                             # number of GRPO steps
     advantage_eps: float = 1e-6                         # epsilon for advantage normalization
-    rollout_batch_size: int = 256                       # batch size for rollouts
+    rollout_batch_size: int = 256                       # number of rollouts per batch
     group_size: int = 8                                 # size of each group
-    epochs_per_rollout_batch: int = 1                   # On-policy or off-policy if > 1
-    train_batch_size: int = 256                         # batch size for training
+    epochs_per_rollout_batch: int = 1                   # On-policy (off-policy if > 1)
+    train_batch_size: int = 256                         # On-policy
     gradient_accumulation_steps: int = 128              # microbatch size is 2
-    loss_type: Literal["no_baseline", "reinforce_with_baseline", "grpo_no_clip", "grpo_clip"] = "no_baseline"
+    loss_type: str = "no_baseline"                      # "no_baseline", "reinforce_with_baseline", "grpo_no_clip", "grpo_clip"
     use_std_normalization: bool = True                  # whether to use standard normalization for advantages
     
 @dataclass

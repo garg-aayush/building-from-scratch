@@ -1,11 +1,17 @@
 import inspect
+import random
 
 import torch
 from configs.defaults import Config
 from omegaconf import OmegaConf
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from utils.constants import DEFAULT_CONFIG, DTYPE_MAPPING
-from utils.helper import init_vllm, load_dataset, pretty_print, set_seed
+from utils.dataset import load_dataset
+from utils.drgrpo_grader import r1_zero_reward_fn
+from utils.grpo import compute_group_normalized_rewards
+from utils.helper import pretty_print, set_seed
+from utils.vllm import init_vllm
+from vllm import SamplingParams
 
 config_path = "/home/aayush/repos/building-from-scratch/grpo/configs/dummy.yaml"
 
@@ -49,7 +55,7 @@ pretty_print(val_dataset[:5])
 # Initialize the vLLM model
 # -------------------------------------------------------------#
 pretty_print("Initializing the vLLM model...", title="vLLM model initialization")
-# vllm_model = init_vllm(config.training.seed, config)
+vllm_model = init_vllm(config.training.seed, config)
 
 
 # -------------------------------------------------------------#
@@ -92,3 +98,69 @@ optimizer = torch.optim.AdamW(
     fused=use_fused,
 )
 print(optimizer)
+
+
+# -------------------------------------------------------------#
+# Training loop
+# -------------------------------------------------------------#
+pretty_print("Starting the training loop...", title="Training loop")
+# number of prompts per rollout batch
+n_prompts_per_rollout_batch = config.training.rollout_batch_size // config.training.group_size
+pretty_print(f"Number of prompts per rollout batch: {n_prompts_per_rollout_batch}")
+
+# sampling params
+sampling_params = SamplingParams(
+    temperature=config.training.temperature,
+    top_p=config.training.top_p,
+    max_tokens=config.training.max_tokens,
+    stop=[str(s) for s in config.training.stop],
+    include_stop_str_in_output=config.training.include_stop_str_in_output,
+    min_tokens=config.training.min_tokens
+)
+# reward function
+reward_fn = r1_zero_reward_fn
+
+# GRPO loop
+for grpo_step in range(config.training.n_grpo_steps):
+    # get a random batch of prompts
+    cur_batch = random.sample(train_dataset, n_prompts_per_rollout_batch)
+    
+    # create a list of repeated prompts and ground truths
+    rep_rollout_prompts = [prompt_template.replace("{question}", ex['problem']) for ex in cur_batch 
+                           for _ in range(config.training.group_size)]
+    rep_rollout_ground_truths = [ex['answer'] for ex in cur_batch for _ in range(config.training.group_size)]
+    
+    # generate rollouts
+    rollout_outputs = vllm_model.generate(rep_rollout_prompts, sampling_params)
+    rollout_responses = [output.outputs[0].text for output in rollout_outputs]
+    
+    # compute rewards
+    rollout_advantages, rollout_raw_rewards, rollout_rewards_meta = compute_group_normalized_rewards(
+        reward_fn,
+        rollout_responses,
+        rep_rollout_ground_truths,
+        config.training.group_size,
+        config.training.advantage_eps,
+        config.training.use_std_normalization,
+    )
+    
+    # print some random rollout responses
+    for i in random.sample(range(len(rollout_responses)), 5):
+        pretty_print(None, title=f"Rollout {i}", is_sub_title=True)
+        pretty_print(f"Prompt -> {rep_rollout_prompts[i]}", is_sub_title=True)
+        pretty_print(f"Response -> {rollout_responses[i]}", title="Response", is_sub_title=True)
+        pretty_print(f"Ground truth -> {rep_rollout_ground_truths[i]}", title="Ground truth", is_sub_title=True)
+        pretty_print(f"Advantage -> {rollout_advantages[i]}", title="Advantage", is_sub_title=True)
+        pretty_print(f"Raw reward -> {rollout_raw_rewards[i]}", title="Raw reward", is_sub_title=True)
+    
+    # tokenize the rollout_responses
+    tokenized_train_data = tokenize_prompt_and_output(rep_rollout_prompts, rollout_responses, tokenizer)
+    
+    
+    # # compute old_log_probs over full rollout_batch_size
+    # num_train_steps_per_epoch = config.training.rollout_batch_size // confg.training.train_batch_size
+    # pretty_print(f"Num. train steps/epoch: {num_train_steps_per_epoch}, train bz: {config.training.train_batch_size}, rollout bz: {config.training.rollout_batch_size}")
+    # model.eval()
+    # with torch.no_grad():
+    
+    exit()
