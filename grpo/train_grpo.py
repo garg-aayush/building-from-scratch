@@ -30,16 +30,16 @@ torch.set_float32_matmul_precision("high") # use tf32
 # Load train and val dataset
 # -------------------------------------------------------------#
 pretty_print(None, title="Load datasets")
-
+# prompt template
 pretty_print(f"Loading prompt template from {config.paths.prompt_template_file}...")
 prompt_template = load_dataset(data_file=config.paths.prompt_template_file, data_type='prompt')
 pretty_print(prompt_template, title="Prompt template", is_sub_title=True)
-
+# train dataset
 pretty_print(f"Loading train dataset from {config.paths.train_data_file}...")
 train_dataset = load_dataset(data_file=config.paths.train_data_file, data_type='train')
 pretty_print(f"Train dataset size: {len(train_dataset)}", title="Train dataset", is_sub_title=True)
 pretty_print(train_dataset[:5])
-
+# val dataset
 pretty_print(f"Loading val dataset from {config.paths.val_data_file}...")
 val_dataset = load_dataset(data_file=config.paths.val_data_file, data_type='val')
 pretty_print(f"Val dataset size: {len(val_dataset)}", title="Val dataset", is_sub_title=True)

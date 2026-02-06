@@ -81,7 +81,9 @@ def init_vllm(seed: int, cfg: Config):
 def load_dataset(data_file: str, data_type: str='train', prompt_template: str=None):
     with open(data_file, 'r') as f:
         if data_type in ['train', 'val']:
-            return [json.loads(line) for line in f]
+            data = [json.loads(line) for line in f]
+            data = [{'problem': item['problem'], 'answer': item['answer']} for item in data]
+            return data
         elif data_type == 'prompt':
             return f.read()
         else:
