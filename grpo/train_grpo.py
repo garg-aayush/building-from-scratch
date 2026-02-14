@@ -6,7 +6,7 @@ from configs.defaults import Config
 from omegaconf import OmegaConf
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from utils.constants import DEFAULT_CONFIG, DTYPE_MAPPING
-from utils.dataset import load_dataset
+from utils.dataset import load_dataset, tokenize_prompt_and_output
 from utils.drgrpo_grader import r1_zero_reward_fn
 from utils.grpo import compute_group_normalized_rewards
 from utils.helper import pretty_print, set_seed
@@ -103,7 +103,7 @@ print(optimizer)
 # -------------------------------------------------------------#
 # Training loop
 # -------------------------------------------------------------#
-pretty_print("Starting the training loop...", title="Training loop")
+pretty_print("Starting the training loop...", title="GRPO Training loop")
 # number of prompts per rollout batch
 n_prompts_per_rollout_batch = config.training.rollout_batch_size // config.training.group_size
 pretty_print(f"Number of prompts per rollout batch: {n_prompts_per_rollout_batch}")
@@ -145,16 +145,18 @@ for grpo_step in range(config.training.n_grpo_steps):
     )
     
     # print some random rollout responses
+    pretty_print(None, title="Random rollout responses")
     for i in random.sample(range(len(rollout_responses)), 5):
         pretty_print(None, title=f"Rollout {i}", is_sub_title=True)
-        pretty_print(f"Prompt -> {rep_rollout_prompts[i]}", is_sub_title=True)
-        pretty_print(f"Response -> {rollout_responses[i]}", title="Response", is_sub_title=True)
-        pretty_print(f"Ground truth -> {rep_rollout_ground_truths[i]}", title="Ground truth", is_sub_title=True)
-        pretty_print(f"Advantage -> {rollout_advantages[i]}", title="Advantage", is_sub_title=True)
-        pretty_print(f"Raw reward -> {rollout_raw_rewards[i]}", title="Raw reward", is_sub_title=True)
+        pretty_print(f"Prompt -> {rep_rollout_prompts[i]}")
+        pretty_print(f"Response -> {rollout_responses[i]}")
+        pretty_print(f"Ground truth -> {rep_rollout_ground_truths[i]}")
+        pretty_print(f"Advantage -> {rollout_advantages[i]}")
+        pretty_print(f"Raw reward -> {rollout_raw_rewards[i]}")
     
     # tokenize the rollout_responses
     tokenized_train_data = tokenize_prompt_and_output(rep_rollout_prompts, rollout_responses, tokenizer)
+    pretty_print(tokenized_train_data, title="Tokenized train data", is_sub_title=True)
     
     
     # # compute old_log_probs over full rollout_batch_size
