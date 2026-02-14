@@ -1,3 +1,9 @@
+import os
+
+# disable v1 multiprocessing to avoid 'LLMEngine' object has no attribute 'model_executor' error in vLLM 0.11.0
+# otherwise downgrade vllm to 0.10.2
+os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0" 
+
 import inspect
 import random
 
@@ -8,13 +14,20 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from utils.constants import DEFAULT_CONFIG, DTYPE_MAPPING
 from utils.dataset import load_dataset, tokenize_prompt_and_output
 from utils.drgrpo_grader import r1_zero_reward_fn
-from utils.grpo import compute_group_normalized_rewards
+from utils.grpo import compute_group_normalized_rewards, get_response_log_probs
 from utils.helper import pretty_print, set_seed
 from utils.vllm import init_vllm
 from vllm import SamplingParams
 
+# os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0" 
+
+
 config_path = "/home/aayush/repos/building-from-scratch/grpo/configs/dummy.yaml"
 
+
+# -------------------------------------------------------------#
+# Load the config
+# -------------------------------------------------------------#
 # load the config
 if config_path is not None:
     config = OmegaConf.load(config_path)
@@ -24,6 +37,14 @@ else:
 config_dict = OmegaConf.to_container(config, resolve=True)
 pretty_print(config_dict, title="Config")
 del config_dict
+
+assert config.training.train_batch_size % config.training.gradient_accumulation_steps == 0, f"train_batch_size must be divisible by gradient_accumulation_steps"
+micro_train_batch_size = config.training.train_batch_size // config.training.gradient_accumulation_steps
+pretty_print(f"Micro train batch size: {micro_train_batch_size}")
+assert config.training.rollout_batch_size % config.training.group_size == 0, f"rollout_batch_size must be divisible by group_size"
+n_prompts_per_rollout_batch = config.training.rollout_batch_size // config.training.group_size
+pretty_print(f"Number of prompts per rollout batch: {n_prompts_per_rollout_batch}")
+assert config.training.train_batch_size >= config.training.group_size, f"train_batch_size must be greater than or equal to group_size"
 
 # -------------------------------------------------------------#
 # Seed and precision setup
@@ -104,9 +125,6 @@ print(optimizer)
 # Training loop
 # -------------------------------------------------------------#
 pretty_print("Starting the training loop...", title="GRPO Training loop")
-# number of prompts per rollout batch
-n_prompts_per_rollout_batch = config.training.rollout_batch_size // config.training.group_size
-pretty_print(f"Number of prompts per rollout batch: {n_prompts_per_rollout_batch}")
 
 # sampling params
 sampling_params = SamplingParams(
@@ -122,6 +140,9 @@ reward_fn = r1_zero_reward_fn
 
 # GRPO loop
 for grpo_step in range(config.training.n_grpo_steps):
+    grpo_step_title = f"GRPO step {grpo_step:03d}/{config.training.n_grpo_steps:03d}"
+    pretty_print(None, title=grpo_step_title)
+    
     # get a random batch of prompts
     cur_batch = random.sample(train_dataset, n_prompts_per_rollout_batch)
     
@@ -158,11 +179,20 @@ for grpo_step in range(config.training.n_grpo_steps):
     tokenized_train_data = tokenize_prompt_and_output(rep_rollout_prompts, rollout_responses, tokenizer)
     pretty_print(tokenized_train_data, title="Tokenized train data", is_sub_title=True)
     
-    
-    # # compute old_log_probs over full rollout_batch_size
-    # num_train_steps_per_epoch = config.training.rollout_batch_size // confg.training.train_batch_size
-    # pretty_print(f"Num. train steps/epoch: {num_train_steps_per_epoch}, train bz: {config.training.train_batch_size}, rollout bz: {config.training.rollout_batch_size}")
-    # model.eval()
-    # with torch.no_grad():
-    
+    # compute old_log_probs over full rollout_batch_size
+    if config.training.loss_type in ["grpo_clip", "grpo_no_clip"]:
+        pretty_print("Computing old_log_probs over full rollout_batch_size...", title=f"{grpo_step_title} - Old log probs computation")
+        model.eval()
+        old_log_probs = []
+        total_train_size, batch_size = len(tokenized_train_data["input_ids"]), config.training.old_log_probs_train_size
+        for idx in range(0, len(tokenized_train_data["input_ids"]), config.training.old_log_probs_train_size):
+            input_ids, labels, response_mask = map(lambda x: x[idx:idx+batch_size].to(config.training.device), [tokenized_train_data["input_ids"], tokenized_train_data["labels"], tokenized_train_data["response_mask"]])
+            with torch.no_grad():
+                with torch.autocast(device_type=config.training.device.split(":")[0], dtype=DTYPE_MAPPING[config.training.dtype]):
+                    log_probs = get_response_log_probs(model, input_ids, labels)["log_probs"]
+                old_log_probs.append(log_probs)
+        old_log_probs = torch.cat(old_log_probs, dim=0)
+        pretty_print(f"Old log probs shape: {old_log_probs.shape}")
+        del log_probs, input_ids, labels, response_mask, total_train_size, batch_size
+        
     exit()
