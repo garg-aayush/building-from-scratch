@@ -46,11 +46,14 @@ class TrainingConfig:
     group_size: int = 8                                 # size of each group
     epochs_per_rollout_batch: int = 1                   # On-policy (off-policy if > 1)
     train_batch_size: int = 64                         # On-policy, batch size for training the policy
-    gradient_accumulation_steps: int = 32              # microbatch size is 2
+    gradient_accumulation_steps: int = 64              # microbatch size is 2
     loss_type: str = "grpo_no_clip"                      # "no_baseline", "reinforce_with_baseline", "grpo_no_clip", "grpo_clip"
     use_std_normalization: bool = True                  # whether to use standard normalization for advantages
+    cliprange: float = 0.2                              # clip ratio
+    max_grad_norm: float = 1.0                          # max gradient norm
     
-    old_log_probs_train_size: int = 8                    # number of tokens to use for computing old log probs
+    old_log_probs_train_size: int = 2                    # number of tokens to use for computing old log probs
+
     
 @dataclass
 class VllmConfig:

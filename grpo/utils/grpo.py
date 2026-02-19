@@ -36,7 +36,7 @@ def compute_group_normalized_rewards(
     grp_rewards = rearrange(raw_rewards, '(n_grp group_size) -> n_grp group_size', group_size=group_size)
 
     # compute mean and std (n_grp,)
-    mean = grp_rewards.mean(dim=-1) 
+    mean = grp_rewards.mean(dim=-1)
     std = grp_rewards.std(dim=-1)
 
     # compute advantage
@@ -46,8 +46,8 @@ def compute_group_normalized_rewards(
 
     # reshape from (n_grp, group_size) -> n_grp * group_size
     advantages = rearrange(grp_advantages, 'n_grp group_size -> (n_grp group_size)', group_size=group_size)
-    
-    return advantages, raw_rewards, {'mean': mean, 'std': std}
+
+    return advantages, raw_rewards, {'mean': mean, 'std': std, 'rewards': rewards}
 
 
 def compute_naive_policy_gradient_loss(
