@@ -2,6 +2,8 @@ from typing import Callable, List, Tuple
 
 import torch
 from einops import rearrange
+from torch.nn import functional as F
+from transformers import PreTrainedModel
 from typing_extensions import Literal
 
 
@@ -34,7 +36,7 @@ def compute_group_normalized_rewards(
     grp_rewards = rearrange(raw_rewards, '(n_grp group_size) -> n_grp group_size', group_size=group_size)
 
     # compute mean and std (n_grp,)
-    mean = grp_rewards.mean(dim=-1) 
+    mean = grp_rewards.mean(dim=-1)
     std = grp_rewards.std(dim=-1)
 
     # compute advantage
@@ -44,8 +46,8 @@ def compute_group_normalized_rewards(
 
     # reshape from (n_grp, group_size) -> n_grp * group_size
     advantages = rearrange(grp_advantages, 'n_grp group_size -> (n_grp group_size)', group_size=group_size)
-    
-    return advantages, raw_rewards, {'mean': mean, 'std': std}
+
+    return advantages, raw_rewards, {'mean': mean, 'std': std, 'rewards': rewards}
 
 
 def compute_naive_policy_gradient_loss(
@@ -224,3 +226,51 @@ def grpo_microbatch_train_step(
     policy_gradient_loss.backward()
 
     return policy_gradient_loss, metadata
+
+
+def get_response_log_probs(
+    model: PreTrainedModel,
+    input_ids: torch.Tensor,
+    labels: torch.Tensor,
+    return_token_entropy: bool = False,
+    ) -> dict[str, torch.Tensor]:
+    """
+    Get the conditional log-probs of the response given the prompt,
+    and optionally the entropy of the next token predictions.
+    Args:
+        model: The model to get the log-probs from.
+        input_ids: The input ids of the prompt.
+        labels: The labels of the response.
+        return_token_entropy: Whether to return the entropy of the next token predictions.
+    Returns:
+        A dictionary containing the log-probs of the response given the prompt and the entropy of the next token predictions.
+    """
+    response_dict = {}
+    # get logits from the model
+    logits = model(input_ids).logits
+    # get the log-probs of the response given the prompt
+    log_probs = F.log_softmax(logits, dim=-1) # (batch_size, sequence_length, vocab_size)
+    # get the log-prob of the token that actually occurred there
+    # labels: (batch_size, sequence_length) -> (batch_size, sequence_length, 1)
+    response_dict["log_probs"] = log_probs.gather(dim=-1, index=labels.unsqueeze(-1)).squeeze(-1) # (batch_size, sequence_length)
+    
+    if return_token_entropy:
+        response_dict["token_entropy"] = compute_entropy(logits)
+    
+    return response_dict
+
+def compute_entropy(logits: torch.Tensor) -> torch.Tensor:
+    """
+    Compute the entropy of the of the next-token predictions (i.e., entropy over the vocabulary dimension).
+    entropy = -sum(p * log(p))
+    Args:
+        logits: torch.Tensor Tensor of shape (batch_size, sequence_length, vocab_size) containing unnormalized logits.
+    Returns:
+        torch.Tensor Shape (batch_size, sequence_length): the entropy of the next-token predictions.
+    """
+    # Using logsumexp keeps everything in log-space, so nothing ever overflows or collapses to zero before you take the log.
+    # If you do softmax -> log, tiny probs become 0 and log(0) blows up to -inf, destroying the entropy calculation.
+    # See https://discuss.pytorch.org/t/justification-for-logsoftmax-being-better-than-log-softmax/140130
+    with torch.no_grad():
+        log_probs = logits - torch.logsumexp(logits, dim=-1, keepdim=True) # (batch_size, sequence_length, vocab_size)
+        return -torch.sum(torch.exp(log_probs) * log_probs, dim=-1) # (batch_size, sequence_length)

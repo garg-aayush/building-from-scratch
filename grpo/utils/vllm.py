@@ -1,8 +1,12 @@
+from typing import Callable, List
+
+from transformers import PreTrainedModel
+from vllm import LLM, SamplingParams
+from vllm.model_executor import set_random_seed as vllm_set_random_seed
+
 from configs.defaults import Config
 from utils.constants import DTYPE_MAPPING
 from utils.helper import pretty_print
-from vllm import LLM, SamplingParams
-from vllm.model_executor import set_random_seed as vllm_set_random_seed
 
 
 # -------------------------------------------------------------#
@@ -29,3 +33,20 @@ def init_vllm(seed: int, cfg: Config):
     }
     pretty_print(vllm_init_params, title="vLLM model initialization parameters")
     return LLM(**vllm_init_params)
+
+# -------------------------------------------------------------#
+# Load the policy into the vLLM model
+# -------------------------------------------------------------#
+def load_policy_into_vllm_instance(policy: PreTrainedModel, llm: LLM):
+    """
+    Copied from https://github.com/huggingface/trl/blob/
+    22759c820867c8659d00082ba8cf004e963873c1/trl/trainer/grpo_trainer.py#L670.
+    """
+    # If the model was torch.compiled, the real module is in ._orig_mod
+    if hasattr(policy, "_orig_mod"):
+        policy_for_state = policy._orig_mod
+    else:
+        policy_for_state = policy
+    state_dict = policy_for_state.state_dict()
+    llm_model = llm.llm_engine.model_executor.driver_worker.model_runner.model
+    llm_model.load_weights(state_dict.items())
