@@ -99,6 +99,7 @@ log:
 
 ## Add vLLM sleep mode
 - https://docs.vllm.ai/en/latest/features/sleep_mode/#sleep-levels
+- commit: `c2bce8d87d8cbffcfbd7534d5328bc3b5fffab55`
 - flag: `use_vllm_sleep_mode` in `configs/defaults.py`
 
 config: same as above
@@ -147,4 +148,55 @@ log:
 [MEM] [GRPO step 009/009] before vLLM sleep: current=11.95GB  peak_since_reset=15.57GB
 [MEM] [GRPO step 009/009] after vLLM sleep: current=11.95GB  peak_since_reset=11.95GB
 [MEM] [GRPO step 009/009] after training inner loop (peak = training VRAM): current=11.95GB  peak_since_reset=18.21GB
+```
+
+## Add bitsandbytes AdamW8bit optimizer
+- commit: `a47601a4837913469037a115030356885694185a`
+- flag: `use_bnb_adamw8bit` in `configs/defaults.py`
+
+config: same as above
+
+log:
+```
+[MEM] after init (model + vLLM + optimizer): current=6.19GB  peak_since_reset=6.19GB
+[MEM] [GRPO step 000/009] after rollout generation: current=6.19GB  peak_since_reset=6.22GB
+[MEM] [GRPO step 000/009] before vLLM sleep: current=6.19GB  peak_since_reset=9.49GB
+[MEM] [GRPO step 000/009] after vLLM sleep: current=6.19GB  peak_since_reset=6.19GB
+[MEM] [GRPO step 000/009] after training inner loop (peak = training VRAM): current=9.13GB  peak_since_reset=12.15GB
+[MEM] [GRPO step 001/009] after rollout generation: current=9.13GB  peak_since_reset=9.17GB
+[MEM] [GRPO step 001/009] before vLLM sleep: current=9.13GB  peak_since_reset=13.14GB
+[MEM] [GRPO step 001/009] after vLLM sleep: current=9.13GB  peak_since_reset=9.13GB
+[MEM] [GRPO step 001/009] after training inner loop (peak = training VRAM): current=9.13GB  peak_since_reset=15.75GB
+[MEM] [GRPO step 002/009] after rollout generation: current=9.13GB  peak_since_reset=9.16GB
+[MEM] [GRPO step 002/009] before vLLM sleep: current=9.13GB  peak_since_reset=12.65GB
+[MEM] [GRPO step 002/009] after vLLM sleep: current=9.13GB  peak_since_reset=9.13GB
+[MEM] [GRPO step 002/009] after training inner loop (peak = training VRAM): current=9.13GB  peak_since_reset=15.30GB
+[MEM] [GRPO step 003/009] after rollout generation: current=9.13GB  peak_since_reset=9.16GB
+[MEM] [GRPO step 003/009] before vLLM sleep: current=9.13GB  peak_since_reset=12.45GB
+[MEM] [GRPO step 003/009] after vLLM sleep: current=9.13GB  peak_since_reset=9.13GB
+[MEM] [GRPO step 003/009] after training inner loop (peak = training VRAM): current=9.13GB  peak_since_reset=15.11GB
+[MEM] [GRPO step 004/009] after rollout generation: current=9.13GB  peak_since_reset=9.16GB
+[MEM] [GRPO step 004/009] before vLLM sleep: current=9.13GB  peak_since_reset=12.45GB
+[MEM] [GRPO step 004/009] after vLLM sleep: current=9.13GB  peak_since_reset=9.13GB
+[MEM] [GRPO step 004/009] after training inner loop (peak = training VRAM): current=9.13GB  peak_since_reset=15.11GB
+[MEM] [GRPO step 005/009] after rollout generation: current=9.13GB  peak_since_reset=9.17GB
+[MEM] [GRPO step 005/009] before vLLM sleep: current=9.13GB  peak_since_reset=12.65GB
+[MEM] [GRPO step 005/009] after vLLM sleep: current=9.13GB  peak_since_reset=9.13GB
+[MEM] [GRPO step 005/009] after training inner loop (peak = training VRAM): current=9.13GB  peak_since_reset=15.29GB
+[MEM] [GRPO step 006/009] after rollout generation: current=9.13GB  peak_since_reset=9.16GB
+[MEM] [GRPO step 006/009] before vLLM sleep: current=9.13GB  peak_since_reset=10.97GB
+[MEM] [GRPO step 006/009] after vLLM sleep: current=9.13GB  peak_since_reset=9.13GB
+[MEM] [GRPO step 006/009] after training inner loop (peak = training VRAM): current=9.13GB  peak_since_reset=13.72GB
+[MEM] [GRPO step 007/009] after rollout generation: current=9.13GB  peak_since_reset=9.16GB
+[MEM] [GRPO step 007/009] before vLLM sleep: current=9.13GB  peak_since_reset=12.41GB
+[MEM] [GRPO step 007/009] after vLLM sleep: current=9.13GB  peak_since_reset=9.13GB
+[MEM] [GRPO step 007/009] after training inner loop (peak = training VRAM): current=9.13GB  peak_since_reset=15.07GB
+[MEM] [GRPO step 008/009] after rollout generation: current=9.13GB  peak_since_reset=9.16GB
+[MEM] [GRPO step 008/009] before vLLM sleep: current=9.13GB  peak_since_reset=11.26GB
+[MEM] [GRPO step 008/009] after vLLM sleep: current=9.13GB  peak_since_reset=9.13GB
+[MEM] [GRPO step 008/009] after training inner loop (peak = training VRAM): current=9.13GB  peak_since_reset=13.99GB
+[MEM] [GRPO step 009/009] after rollout generation: current=9.13GB  peak_since_reset=9.16GB
+[MEM] [GRPO step 009/009] before vLLM sleep: current=9.13GB  peak_since_reset=12.47GB
+[MEM] [GRPO step 009/009] after vLLM sleep: current=9.13GB  peak_since_reset=9.13GB
+[MEM] [GRPO step 009/009] after training inner loop (peak = training VRAM): current=9.13GB  peak_since_reset=15.12GB
 ```

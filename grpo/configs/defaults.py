@@ -57,8 +57,8 @@ class TrainingConfig:
     # memory optimization flags
     track_peak_memory: bool = True                      # log peak VRAM at key points in the training loop
     use_gradient_checkpointing: bool = True             # trade compute for activation memory
-    use_vllm_sleep_mode: bool = True                         # offload vLLM weights+KV to CPU during training
-
+    use_vllm_sleep_mode: bool = True                    # offload vLLM weights+KV to CPU during training
+    use_bnb_adamw8bit: bool = True                      # use bitsandbytes AdamW8bit optimizer
     
 @dataclass
 class VllmConfig:

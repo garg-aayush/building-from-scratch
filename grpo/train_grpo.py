@@ -113,18 +113,27 @@ else:
 # Setup the optimizer
 # -------------------------------------------------------------#
 pretty_print("Setup the AdamW optimizer...", title="AdamW optimizer setup")
-# check if fused AdamW is available
-use_fused = "fused" in inspect.signature(torch.optim.AdamW).parameters and config.training.device.startswith("cuda")
-print(f"Using fused AdamW: {use_fused}")
-# optimizer
-optimizer = torch.optim.AdamW(
-    model.parameters(),
-    lr=config.training.learning_rate,
-    weight_decay=config.training.weight_decay,
-    betas=(config.training.adam_beta1, config.training.adam_beta2),
-    eps=config.training.adam_eps,
-    fused=use_fused,
-)
+if config.training.use_bnb_adamw8bit:
+    import bitsandbytes as bnb
+    pretty_print("Using bitsandbytes AdamW8bit optimizer.")
+    optimizer = bnb.optim.AdamW8bit(
+        model.parameters(),
+        lr=config.training.learning_rate,
+        weight_decay=config.training.weight_decay,
+        betas=(config.training.adam_beta1, config.training.adam_beta2),
+        eps=config.training.adam_eps,
+    )
+else:
+    use_fused = "fused" in inspect.signature(torch.optim.AdamW).parameters and config.training.device.startswith("cuda")
+    pretty_print(f"Using torch AdamW (fused={use_fused}).")
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=config.training.learning_rate,
+        weight_decay=config.training.weight_decay,
+        betas=(config.training.adam_beta1, config.training.adam_beta2),
+        eps=config.training.adam_eps,
+        fused=use_fused,
+    )
 print(optimizer)
 
 if config.training.track_peak_memory:
