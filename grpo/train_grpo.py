@@ -272,24 +272,26 @@ for grpo_step in range(config.training.n_grpo_steps):
             
             loss_accum = 0.0
             entropy_accum = 0.0
+            clip_fraction_accum = 0.0
+            mean_ratio_accum = 0.0
             total_response_tokens = 0
             start_time = time.time()
             # loop through microbatches
             for idx in tqdm(range(config.training.gradient_accumulation_steps), desc="Microbatches", leave=False):
-                
+
                 # get the base index, start index, and end index for the microbatch
                 base_idx = train_step * config.training.train_batch_size
                 start_idx = base_idx + idx * micro_train_batch_size
                 end_idx = start_idx + micro_train_batch_size
                 # pretty_print(f"microbatch idx: {idx:03d}, base_idx: {base_idx:03d}, start_idx: {start_idx:03d}, end_idx: {end_idx:03d}")
-                
+
                 # microbatch of input_ids, labels, and response_mask
                 microbatch = {k: v[start_idx:end_idx].to(config.training.device) for k, v in tokenized_train_data.items()}
-                
+
                 # compute current policy log_probs and token_entropy for the microbatch
                 with torch.autocast(device_type=config.training.device.split(":")[0], dtype=DTYPE_MAPPING[config.training.dtype]):
                     cur_log_probs_result = get_response_log_probs(model, microbatch["input_ids"], microbatch["labels"], True)
-                
+
                 # calculate the loss for the microbatch
                 current_log_probs = cur_log_probs_result["log_probs"]
                 token_entropy = cur_log_probs_result["token_entropy"]
@@ -302,17 +304,23 @@ for grpo_step in range(config.training.n_grpo_steps):
                     raw_rewards=rollout_raw_rewards[start_idx:end_idx].unsqueeze(-1).to(config.training.device),
                     advantages=rollout_advantages[start_idx:end_idx].unsqueeze(-1).to(config.training.device),
                     old_log_probs=old_log_probs_microbatch,
-                    cliprange=config.training.cliprange
+                    cliprange=config.training.cliprange,
+                    norm_mode=config.training.normalize_mode,
+                    norm_constant=config.training.normalize_constant,
                 )
-                
+
                 # accumulate
                 loss_accum += loss.detach()
                 entropy_accum += (token_entropy * microbatch["response_mask"]).sum().detach()
                 total_response_tokens += microbatch["response_mask"].sum().detach()
+                clip_fraction_accum += meta.get("clip_fraction", 0.0)
+                mean_ratio_accum += meta.get("mean_ratio", 0.0)
                 del microbatch, cur_log_probs_result, current_log_probs, token_entropy, loss, old_log_probs_microbatch
-            
-            
+
+
             avg_entropy = entropy_accum / total_response_tokens
+            avg_clip_fraction = clip_fraction_accum / config.training.gradient_accumulation_steps
+            avg_mean_ratio = mean_ratio_accum / config.training.gradient_accumulation_steps
             grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.training.max_grad_norm)
             
             # update the model parameters
@@ -332,7 +340,7 @@ for grpo_step in range(config.training.n_grpo_steps):
                 step_mean_reward += r["reward"] / rewards_len
             
             # print the step metrics
-            pretty_print(f"[TRAIN] grpo_step: {grpo_step:03d} | loss: {loss_accum.item():.4f} | entropy: {avg_entropy:.4f} | reward: {step_mean_reward:.4f} | answer_reward: {step_mean_answer_reward:.4f} | format_reward: {step_mean_format_reward:.4f} | grad_norm: {grad_norm:.4f} | lr: {config.training.learning_rate:.6f} | mean_response_len: {mean_response_length:.1f} | time: {dt:.2f}s")
+            pretty_print(f"[TRAIN] grpo_step: {grpo_step:03d} | loss: {loss_accum.item():.4f} | entropy: {avg_entropy:.4f} | reward: {step_mean_reward:.4f} | answer_reward: {step_mean_answer_reward:.4f} | format_reward: {step_mean_format_reward:.4f} | clip_frac: {avg_clip_fraction:.4f} | mean_ratio: {avg_mean_ratio:.4f} | grad_norm: {grad_norm:.4f} | lr: {config.training.learning_rate:.6f} | mean_response_len: {mean_response_length:.1f} | time: {dt:.2f}s")
             
 
             torch.cuda.empty_cache()

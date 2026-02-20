@@ -53,6 +53,8 @@ class TrainingConfig:
     max_grad_norm: float = 1.0                          # max gradient norm
     
     old_log_probs_train_size: int = 2                    # number of tokens to use for computing old log probs
+    normalize_mode: str = "mean"                         # loss normalization mode: "mean", "constant", or "microbatch"
+    normalize_constant: float = 1024.0                   # normalization constant (used when normalize_mode = "constant")
 
     # evaluation
     eval_interval: int = 4                             # evaluate every N grpo steps (-1 = disabled)
