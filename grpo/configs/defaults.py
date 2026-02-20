@@ -61,6 +61,9 @@ class TrainingConfig:
     # checkpointing
     checkpoint_interval: int = 4                       # save a checkpoint every N grpo steps (-1 = disabled)
 
+    # logging
+    n_rollouts_to_log: int = 16                         # number of random rollouts to save to disk per grpo step (0 = disabled)
+
     # memory optimization flags
     track_peak_memory: bool = True                      # log peak VRAM at key points in the training loop
     use_gradient_checkpointing: bool = True             # trade compute for activation memory

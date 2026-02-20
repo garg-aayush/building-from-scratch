@@ -5,6 +5,7 @@ import os
 os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0" 
 
 import inspect
+import json
 import random
 import time
 
@@ -198,15 +199,27 @@ for grpo_step in range(config.training.n_grpo_steps):
         config.training.use_std_normalization,
     )
     
-    # print some random rollout responses
-    pretty_print(None, title="Random rollout responses")
-    for i in random.sample(range(len(rollout_responses)), 5):
-        pretty_print(None, title=f"Rollout {i}", is_sub_title=True)
-        pretty_print(f"Prompt -> {rep_rollout_prompts[i]}")
-        pretty_print(f"Response -> {rollout_responses[i]}")
-        pretty_print(f"Ground truth -> {rep_rollout_ground_truths[i]}")
-        pretty_print(f"Advantage -> {rollout_advantages[i]}")
-        pretty_print(f"Raw reward -> {rollout_raw_rewards[i]}")
+    # save a random sample of rollouts to disk
+    if config.training.n_rollouts_to_log > 0:
+        save_indices = random.sample(range(len(rollout_responses)), min(config.training.n_rollouts_to_log, len(rollout_responses)))
+        rollouts_dir = config.paths.output_dir / "rollouts"
+        rollouts_dir.mkdir(parents=True, exist_ok=True)
+        rollout_records = [
+            {
+                "prompt": rep_rollout_prompts[i],
+                "response": rollout_responses[i],
+                "ground_truth": rep_rollout_ground_truths[i],
+                "advantage": rollout_advantages[i].item(),
+                "reward": rollout_rewards_meta["rewards"][i]["reward"],
+                "format_reward": rollout_rewards_meta["rewards"][i]["format_reward"],
+                "answer_reward": rollout_rewards_meta["rewards"][i]["answer_reward"],
+            }
+            for i in save_indices
+        ]
+        rollout_file = rollouts_dir / f"rollouts_step_{grpo_step:03d}.jsonl"
+        with open(rollout_file, "w") as f:
+            f.write("\n".join(json.dumps(r) for r in rollout_records) + "\n")
+        pretty_print(f"Saved {len(rollout_records)} rollouts to {rollout_file}")
     
     if config.training.track_peak_memory:
         log_memory(f"[{grpo_step_title}] after rollout generation", config.training.device, reset_after=True)
