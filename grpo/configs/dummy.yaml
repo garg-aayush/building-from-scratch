@@ -1,2 +1,4 @@
 paths:
   output_dir: /home/aayush/RESULTS/GRPO/dummy_run
+training:
+  wandb_run_name: dummy
