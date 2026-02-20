@@ -213,10 +213,17 @@ for grpo_step in range(config.training.n_grpo_steps):
         # delete unnecessary variables
         del log_probs, input_ids, labels, total_train_size, batch_size, old_log_probs_mem_mb
     
+    # sleep vLLM to free its GPU memory (weights + KV cache) during training
+    if config.training.track_peak_memory:
+        log_memory(f"[{grpo_step_title}] before vLLM sleep", config.training.device, reset_after=True)
+    if config.training.use_vllm_sleep_mode:
+        pretty_print("Sleeping vLLM to free its GPU memory (weights + KV cache) during training...")
+        vllm_model.sleep(level=1)
+    if config.training.track_peak_memory:
+        log_memory(f"[{grpo_step_title}] after vLLM sleep", config.training.device, reset_after=True)
+    
     # clear torch cache (to save memory)
     torch.cuda.empty_cache()
-    if config.training.track_peak_memory:
-        log_memory(f"[{grpo_step_title}] before training inner loop", config.training.device, reset_after=True)
     model.train()
 
     # Inner loop: grpo over the rollout batch
@@ -297,6 +304,8 @@ for grpo_step in range(config.training.n_grpo_steps):
 
     if config.training.track_peak_memory:
         log_memory(f"[{grpo_step_title}] after training inner loop (peak = training VRAM)", config.training.device, reset_after=True)
-
+    # wake vLLM before loading updated policy weights and next generation step
+    if config.training.use_vllm_sleep_mode:
+        vllm_model.wake_up()
     # load the model weights
     load_policy_into_vllm_instance(model, vllm_model)
