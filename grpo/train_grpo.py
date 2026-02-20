@@ -9,19 +9,18 @@ import random
 import time
 
 import torch
+from configs.defaults import Config
 from omegaconf import OmegaConf
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from vllm import SamplingParams
-
-from configs.defaults import Config
 from utils.constants import DEFAULT_CONFIG, DTYPE_MAPPING
 from utils.dataset import load_dataset, tokenize_prompt_and_output
 from utils.drgrpo_grader import r1_zero_reward_fn
 from utils.grpo import (compute_group_normalized_rewards,
                         get_response_log_probs, grpo_microbatch_train_step)
-from utils.helper import pretty_print, set_seed
+from utils.helper import log_memory, pretty_print, set_seed
 from utils.vllm import init_vllm, load_policy_into_vllm_instance
+from vllm import SamplingParams
 
 # os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0" 
 
@@ -124,6 +123,9 @@ optimizer = torch.optim.AdamW(
 )
 print(optimizer)
 
+if config.training.track_peak_memory:
+    log_memory("after init (model + vLLM + optimizer)", config.training.device, reset_after=True)
+
 
 # -------------------------------------------------------------#
 # Training loop
@@ -179,6 +181,9 @@ for grpo_step in range(config.training.n_grpo_steps):
         pretty_print(f"Advantage -> {rollout_advantages[i]}")
         pretty_print(f"Raw reward -> {rollout_raw_rewards[i]}")
     
+    if config.training.track_peak_memory:
+        log_memory(f"[{grpo_step_title}] after rollout generation", config.training.device, reset_after=True)
+
     # tokenize the rollout_responses
     tokenized_train_data = tokenize_prompt_and_output(rep_rollout_prompts, rollout_responses, tokenizer)
     pretty_print(tokenized_train_data, title="Tokenized train data", is_sub_title=True)
@@ -197,8 +202,8 @@ for grpo_step in range(config.training.n_grpo_steps):
                 with torch.autocast(device_type=config.training.device.split(":")[0], dtype=DTYPE_MAPPING[config.training.dtype]):
                     log_probs = get_response_log_probs(model, input_ids, labels)["log_probs"]
                 old_log_probs.append(log_probs)
-        # concatenate the old log probs for each microbatch
-        old_log_probs = torch.cat(old_log_probs, dim=0)
+        # concatenate the old log probs for each microbatch and offload to CPU
+        old_log_probs = torch.cat(old_log_probs, dim=0).cpu()
         old_log_probs_mem_mb = old_log_probs.element_size() * old_log_probs.nelement() / 1024 ** 2
         pretty_print(f"Old log probs shape: {old_log_probs.shape}, memory: {old_log_probs_mem_mb:.2f} MB")
         # delete unnecessary variables
@@ -206,6 +211,8 @@ for grpo_step in range(config.training.n_grpo_steps):
     
     # clear torch cache (to save memory)
     torch.cuda.empty_cache()
+    if config.training.track_peak_memory:
+        log_memory(f"[{grpo_step_title}] before training inner loop", config.training.device, reset_after=True)
     model.train()
 
     # Inner loop: grpo over the rollout batch
@@ -240,7 +247,7 @@ for grpo_step in range(config.training.n_grpo_steps):
                 # calculate the loss for the microbatch
                 current_log_probs = cur_log_probs_result["log_probs"]
                 token_entropy = cur_log_probs_result["token_entropy"]
-                old_log_probs_microbatch = old_log_probs[start_idx:end_idx] if old_log_probs is not None else None
+                old_log_probs_microbatch = old_log_probs[start_idx:end_idx].to(config.training.device) if old_log_probs is not None else None
                 loss, meta = grpo_microbatch_train_step(
                     policy_log_probs=current_log_probs,
                     response_mask=microbatch["response_mask"],
@@ -256,6 +263,7 @@ for grpo_step in range(config.training.n_grpo_steps):
                 loss_accum += loss.detach()
                 entropy_accum += (token_entropy * microbatch["response_mask"]).sum().detach()
                 total_response_tokens += microbatch["response_mask"].sum().detach()
+                del microbatch, cur_log_probs_result, current_log_probs, token_entropy, loss, old_log_probs_microbatch
             
             
             avg_entropy = entropy_accum / total_response_tokens
@@ -282,9 +290,9 @@ for grpo_step in range(config.training.n_grpo_steps):
             
 
             torch.cuda.empty_cache()
-    
-    
+
+    if config.training.track_peak_memory:
+        log_memory(f"[{grpo_step_title}] after training inner loop (peak = training VRAM)", config.training.device, reset_after=True)
+
     # load the model weights
     load_policy_into_vllm_instance(model, vllm_model)
-    
-    if grpo_step > 10:  exit()
