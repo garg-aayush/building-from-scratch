@@ -97,6 +97,10 @@ model = AutoModelForCausalLM.from_pretrained(
             attn_implementation=config.training.attention_type, 
             device_map=config.training.device
         )
+# gradient checkpointing: trade compute for activation memory
+if config.training.use_gradient_checkpointing:
+    pretty_print("Gradient checkpointing enabled...")
+    model.gradient_checkpointing_enable()
 # compile the model
 if config.training.use_compile:
     print(f"compile flag: {config.training.use_compile}, compiling the model...")
