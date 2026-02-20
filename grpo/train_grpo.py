@@ -345,3 +345,11 @@ for grpo_step in range(config.training.n_grpo_steps):
             max_val_examples=config.training.max_val_examples,
         )
         pretty_print(f"[EVAL] grpo_step: {grpo_step:03d} | n_examples: {eval_metrics['n_examples']} | reward: {eval_metrics['mean_reward']:.4f} | answer_reward: {eval_metrics['mean_answer_reward']:.4f} | format_reward: {eval_metrics['mean_format_reward']:.4f}")
+
+    # checkpoint saving
+    if config.training.checkpoint_interval > 0 and ((grpo_step+1) % config.training.checkpoint_interval == 0 or is_last_step):
+        ckpt_dir = config.paths.output_dir / f"checkpoint_{grpo_step:03d}"
+        pretty_print(f"Saving checkpoint to {ckpt_dir}...", title=f"{grpo_step_title} - Checkpoint", is_sub_title=True)
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        model.save_pretrained(ckpt_dir)
+        tokenizer.save_pretrained(ckpt_dir)
