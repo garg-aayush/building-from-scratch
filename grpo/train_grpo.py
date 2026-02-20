@@ -16,6 +16,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from utils.constants import DEFAULT_CONFIG, DTYPE_MAPPING
 from utils.dataset import load_dataset, tokenize_prompt_and_output
 from utils.drgrpo_grader import r1_zero_reward_fn
+from utils.evaluate import evaluate_vllm
 from utils.grpo import (compute_group_normalized_rewards,
                         get_response_log_probs, grpo_microbatch_train_step)
 from utils.helper import log_memory, pretty_print, set_seed
@@ -157,11 +158,24 @@ sampling_params = SamplingParams(
 # reward function
 reward_fn = r1_zero_reward_fn
 
+# evaluation before any training
+if config.training.eval_interval > 0:
+    pretty_print("Running base model evaluation (pre-training)...", title="Base Model Evaluation")
+    eval_metrics = evaluate_vllm(
+        vllm_model=vllm_model,
+        reward_fn=reward_fn,
+        val_dataset=val_dataset,
+        prompt_template=prompt_template,
+        sampling_params=sampling_params,
+        max_val_examples=config.training.max_val_examples,
+    )
+    pretty_print(f"[EVAL] grpo_step: 000 | n_examples: {eval_metrics['n_examples']} | reward: {eval_metrics['mean_reward']:.4f} | answer_reward: {eval_metrics['mean_answer_reward']:.4f} | format_reward: {eval_metrics['mean_format_reward']:.4f}")
+
 # GRPO loop
 for grpo_step in range(config.training.n_grpo_steps):
     grpo_step_title = f"GRPO step {grpo_step:03d}/{config.training.n_grpo_steps-1:03d}"
     pretty_print(None, title=grpo_step_title)
-    
+
     # get a random batch of prompts
     cur_batch = random.sample(train_dataset, n_prompts_per_rollout_batch)
     
@@ -305,7 +319,7 @@ for grpo_step in range(config.training.n_grpo_steps):
                 step_mean_reward += r["reward"] / rewards_len
             
             # print the step metrics
-            pretty_print(f"grpo_step: {grpo_step:03d} | train_step: {train_step:02d} | loss: {loss_accum.item():.4f} | entropy: {avg_entropy:.4f} | reward: {step_mean_reward:.4f} | answer_reward: {step_mean_answer_reward:.4f} | format_reward: {step_mean_format_reward:.4f} | grad_norm: {grad_norm:.4f} | lr: {config.training.learning_rate:.6f} | mean_response_len: {mean_response_length:.1f} | time: {dt:.2f}s")
+            pretty_print(f"[TRAIN] grpo_step: {grpo_step:03d} | loss: {loss_accum.item():.4f} | entropy: {avg_entropy:.4f} | reward: {step_mean_reward:.4f} | answer_reward: {step_mean_answer_reward:.4f} | format_reward: {step_mean_format_reward:.4f} | grad_norm: {grad_norm:.4f} | lr: {config.training.learning_rate:.6f} | mean_response_len: {mean_response_length:.1f} | time: {dt:.2f}s")
             
 
             torch.cuda.empty_cache()
@@ -317,3 +331,17 @@ for grpo_step in range(config.training.n_grpo_steps):
         vllm_model.wake_up()
     # load the model weights
     load_policy_into_vllm_instance(model, vllm_model)
+    
+    # intermediate evaluation on a subset of val_dataset
+    is_last_step = grpo_step == config.training.n_grpo_steps - 1
+    if config.training.eval_interval > 0 and ((grpo_step+1) % config.training.eval_interval == 0 or is_last_step):
+        pretty_print(f"Running intermediate evaluation on {config.training.max_val_examples} val examples...", title=f"{grpo_step_title} - Intermediate Evaluation", is_sub_title=True)
+        eval_metrics = evaluate_vllm(
+            vllm_model=vllm_model,
+            reward_fn=reward_fn,
+            val_dataset=val_dataset,
+            prompt_template=prompt_template,
+            sampling_params=sampling_params,
+            max_val_examples=config.training.max_val_examples,
+        )
+        pretty_print(f"[EVAL] grpo_step: {grpo_step:03d} | n_examples: {eval_metrics['n_examples']} | reward: {eval_metrics['mean_reward']:.4f} | answer_reward: {eval_metrics['mean_answer_reward']:.4f} | format_reward: {eval_metrics['mean_format_reward']:.4f}")

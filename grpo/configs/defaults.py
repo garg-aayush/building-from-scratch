@@ -54,6 +54,10 @@ class TrainingConfig:
     
     old_log_probs_train_size: int = 2                    # number of tokens to use for computing old log probs
 
+    # evaluation
+    eval_interval: int = 4                             # evaluate every N grpo steps (-1 = disabled)
+    max_val_examples: int = 1024                         # max number of val examples per eval
+
     # memory optimization flags
     track_peak_memory: bool = True                      # log peak VRAM at key points in the training loop
     use_gradient_checkpointing: bool = True             # trade compute for activation memory
