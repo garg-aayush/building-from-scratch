@@ -42,11 +42,11 @@ class TrainingConfig:
     # GRPO parameters
     n_grpo_steps: int = 10                             # number of GRPO steps
     advantage_eps: float = 1e-6                         # epsilon for advantage normalization
-    rollout_batch_size: int = 16                       # number of rollouts per batch
-    group_size: int = 4                                 # size of each group
+    rollout_batch_size: int = 256                       # number of rollouts per batch
+    group_size: int = 8                                 # size of each group
     epochs_per_rollout_batch: int = 1                   # On-policy (off-policy if > 1)
-    train_batch_size: int = 16                         # On-policy, batch size for training the policy
-    gradient_accumulation_steps: int = 16              # microbatch size is 2
+    train_batch_size: int = 256                         # On-policy, batch size for training the policy
+    gradient_accumulation_steps: int = 256              # microbatch size is 2
     loss_type: str = "grpo_no_clip"                      # "no_baseline", "reinforce_with_baseline", "grpo_no_clip", "grpo_clip"
     use_std_normalization: bool = True                  # whether to use standard normalization for advantages
     cliprange: float = 0.2                              # clip ratio

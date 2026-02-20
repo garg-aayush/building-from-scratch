@@ -200,6 +200,7 @@ for grpo_step in range(config.training.n_grpo_steps):
     # tokenize the rollout_responses
     tokenized_train_data = tokenize_prompt_and_output(rep_rollout_prompts, rollout_responses, tokenizer)
     pretty_print(tokenized_train_data, title="Tokenized train data", is_sub_title=True)
+    mean_response_length = tokenized_train_data["response_mask"].sum(dim=1).float().mean().item()
     
     # compute old_log_probs over full rollout_batch_size
     old_log_probs = None
@@ -223,8 +224,6 @@ for grpo_step in range(config.training.n_grpo_steps):
         del log_probs, input_ids, labels, total_train_size, batch_size, old_log_probs_mem_mb
     
     # sleep vLLM to free its GPU memory (weights + KV cache) during training
-    if config.training.track_peak_memory:
-        log_memory(f"[{grpo_step_title}] before vLLM sleep", config.training.device, reset_after=True)
     if config.training.use_vllm_sleep_mode:
         pretty_print("Sleeping vLLM to free its GPU memory (weights + KV cache) during training...")
         vllm_model.sleep(level=1)
@@ -306,7 +305,7 @@ for grpo_step in range(config.training.n_grpo_steps):
                 step_mean_reward += r["reward"] / rewards_len
             
             # print the step metrics
-            pretty_print(f"grpo_step: {grpo_step:03d} | train_step: {train_step:02d} | loss: {loss_accum.item():.4f} | entropy: {avg_entropy:.4f} | reward: {step_mean_reward:.4f} | answer_reward: {step_mean_answer_reward:.4f} | format_reward: {step_mean_format_reward:.4f} | grad_norm: {grad_norm:.4f} | lr: {config.training.learning_rate:.6f} | time: {dt:.2f}s")
+            pretty_print(f"grpo_step: {grpo_step:03d} | train_step: {train_step:02d} | loss: {loss_accum.item():.4f} | entropy: {avg_entropy:.4f} | reward: {step_mean_reward:.4f} | answer_reward: {step_mean_answer_reward:.4f} | format_reward: {step_mean_format_reward:.4f} | grad_norm: {grad_norm:.4f} | lr: {config.training.learning_rate:.6f} | mean_response_len: {mean_response_length:.1f} | time: {dt:.2f}s")
             
 
             torch.cuda.empty_cache()
