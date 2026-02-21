@@ -15,6 +15,16 @@
 
 # OUTPUT_DIR="/results/lr_sweep"
 
+# -------------------------------------------------------------#
+# Baselines
+# -------------------------------------------------------------#
+CONFIGS=(
+    # "configs/baselines/no_baseline.yaml"
+    # "configs/baselines/reinforce_baseline.yaml"
+    "configs/baselines/no_baseline_lr1.5e-5.yaml"
+)
+OUTPUT_DIR="/results/baselines"
+
 for config in "${CONFIGS[@]}"; do
     echo "Running $config"
     # cmd="modal run --detach train_on_modal.py \
