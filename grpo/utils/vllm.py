@@ -25,7 +25,7 @@ def init_vllm(seed: int, cfg: Config):
     # Note: Removed profiling_patch as it's vLLM version-dependent and causes AttributeError in newer versions
     # with world_size_patch:
     vllm_init_params = {
-        "model": cfg.paths.model_path.as_posix(),
+        "model": cfg.paths.model_path,
         "gpu_memory_utilization": cfg.vllm.gpu_memory_utilization,
         "dtype": DTYPE_MAPPING[cfg.vllm.dtype],
         "enable_prefix_caching": cfg.vllm.enable_prefix_caching,
