@@ -28,14 +28,25 @@ from pathlib import Path
 
 import modal
 from omegaconf import OmegaConf
-from utils.modal_constants import (APP_NAME_TRAINING, CONTAINER_CODE_DIR,
-                                   CONTAINER_DATA_DIR, CONTAINER_RESULTS_DIR,
-                                   GPU_TYPE, VOLUME_NAME_DATA,
-                                   VOLUME_NAME_RESULTS)
 
 # -------------------------------------------------------------#
 # Default paths (all inside Modal volumes)
 # -------------------------------------------------------------#
+# Volume names
+VOLUME_NAME_DATA    = "grpo-data"
+VOLUME_NAME_RESULTS = "grpo-results"
+
+# Container mount points
+CONTAINER_DATA_DIR    = "/data"
+CONTAINER_RESULTS_DIR = "/results"
+CONTAINER_CODE_DIR    = "/grpo"
+
+# GPU
+GPU_TYPE = "H100"
+
+# Modal app names
+APP_NAME_TRAINING = "grpo-training"
+
 DEFAULT_MODEL_DIR  = f"{CONTAINER_DATA_DIR}/models/Qwen2.5-Math-1.5B"
 DEFAULT_TRAIN_DATA = f"{CONTAINER_DATA_DIR}/GRPO/train.jsonl"
 DEFAULT_VAL_DATA   = f"{CONTAINER_DATA_DIR}/GRPO/validation.jsonl"

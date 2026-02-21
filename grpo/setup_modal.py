@@ -17,12 +17,9 @@ from pathlib import Path
 
 import modal
 
-from utils.modal_constants import (
-    APP_NAME_SETUP,
-    CONTAINER_DATA_DIR,
-    VOLUME_NAME_DATA,
-)
-
+APP_NAME_SETUP = "grpo-setup"
+CONTAINER_DATA_DIR = "/data"
+VOLUME_NAME_DATA = "grpo-data"
 
 # -------------------------------------------------------------#
 # Modal app and volume
