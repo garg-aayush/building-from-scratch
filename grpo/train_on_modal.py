@@ -11,6 +11,9 @@ Usage (run from inside grpo/):
     # Always set --output-dir to a path inside the results volume:
     modal run train_on_modal.py --config configs/test_modal.yaml --output-dir /results/test_modal
 
+    # --detach is REQUIRED with --spawn; without it Modal kills the job on exit.
+    modal run --detach train_on_modal.py --config configs/test_modal.yaml --output-dir /results/test_modal --spawn
+
 Default paths inside Modal containers:
     Model weights : /data/models/Qwen2.5-Math-1.5B
     Train data    : /data/GRPO/train.jsonl
@@ -166,21 +169,8 @@ def main(
     val_data: str = DEFAULT_VAL_DATA,
     prompt_template: str = DEFAULT_PROMPT_TPL,
     output_dir: str = DEFAULT_OUTPUT_DIR,
+    spawn: bool = False,
 ):
-    """Launch GRPO training on Modal.
-
-    Required:
-        --config           Path to a local YAML config file.
-
-    Optional (all paths are inside Modal volumes):
-        --model-dir        Path inside grpo-data volume to model weights.
-        --train-data       Path inside grpo-data volume to train.jsonl.
-        --val-data         Path inside grpo-data volume to validation.jsonl.
-        --prompt-template  Path inside grpo-data volume to prompt template.
-        --output-dir       Path inside grpo-results volume for outputs.
-                           IMPORTANT: must start with /results/ so it lands
-                           in the persistent results volume (e.g. /results/my_run).
-    """
     base_cfg = OmegaConf.load(config)
     path_overrides = OmegaConf.create({
         "paths": {
@@ -196,9 +186,18 @@ def main(
     buf = io.StringIO()
     OmegaConf.save(merged, buf)
 
-    print(f"Submitting GRPO training job")
-    print(f"  config : {config}")
-    print(f"  model  : {model_dir}")
-    print(f"  output : {output_dir}")
-
-    run_training.remote(merged_config_yaml=buf.getvalue())
+    if spawn:
+        call = run_training.spawn(merged_config_yaml=buf.getvalue())
+        print("Job submitted!")
+        print(f"  call ID : {call.object_id}")
+        print(f"  config  : {config}")
+        print(f"  output  : {output_dir}")
+        print(f"  track   : https://modal.com/apps/{APP_NAME_TRAINING}")
+        print()
+        print("NOTE: run with 'modal run --detach' to prevent the app from")
+        print("      being torn down when the local entrypoint exits.")
+    else:
+        print("Submitting GRPO training job")
+        print(f"  config : {config}")
+        print(f"  output : {output_dir}")
+        run_training.remote(merged_config_yaml=buf.getvalue())

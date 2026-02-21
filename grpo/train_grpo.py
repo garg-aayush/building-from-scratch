@@ -13,7 +13,6 @@ import time
 
 import torch
 import wandb
-from configs.defaults import Config
 from omegaconf import OmegaConf
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -58,13 +57,13 @@ if __name__ == "__main__":
         wandb.define_metric("eval/*", step_metric="eval_step")
     del config_dict
 
-    assert config.training.train_batch_size % config.training.gradient_accumulation_steps == 0, f"train_batch_size must be divisible by gradient_accumulation_steps"
+    assert config.training.train_batch_size % config.training.gradient_accumulation_steps == 0, "train_batch_size must be divisible by gradient_accumulation_steps"
     micro_train_batch_size = config.training.train_batch_size // config.training.gradient_accumulation_steps
     pretty_print(f"Micro train batch size: {micro_train_batch_size}")
-    assert config.training.rollout_batch_size % config.training.group_size == 0, f"rollout_batch_size must be divisible by group_size"
+    assert config.training.rollout_batch_size % config.training.group_size == 0, "rollout_batch_size must be divisible by group_size"
     n_prompts_per_rollout_batch = config.training.rollout_batch_size // config.training.group_size
     pretty_print(f"Number of prompts per rollout batch: {n_prompts_per_rollout_batch}")
-    assert config.training.train_batch_size >= config.training.group_size, f"train_batch_size must be greater than or equal to group_size"
+    assert config.training.train_batch_size >= config.training.group_size, "train_batch_size must be greater than or equal to group_size"
 
     # -------------------------------------------------------------#
     # Seed and precision setup
@@ -104,10 +103,10 @@ if __name__ == "__main__":
     # -------------------------------------------------------------#
     pretty_print(None, title="Tokenizer and model initialization")
     # tokenizer
-    pretty_print(f"Initializing the tokenizer...")
+    pretty_print("Initializing the tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(config.paths.model_path)
     # model
-    pretty_print(f"Initializing the model...")
+    pretty_print("Initializing the model...")
     model = AutoModelForCausalLM.from_pretrained(
                 config.paths.model_path,
                 dtype=DTYPE_MAPPING[config.training.dtype],
@@ -201,6 +200,7 @@ if __name__ == "__main__":
 
     # GRPO loop
     for grpo_step in range(config.training.n_grpo_steps):
+        is_last_step = grpo_step == config.training.n_grpo_steps - 1
         grpo_step_title = f"GRPO step {grpo_step:03d}/{config.training.n_grpo_steps-1:03d}"
         pretty_print(None, title=grpo_step_title)
 
@@ -231,7 +231,7 @@ if __name__ == "__main__":
         )
 
         # save a random sample of rollouts to disk
-        if config.training.n_rollouts_to_log > 0:
+        if config.training.n_rollouts_to_log > 0 and ((grpo_step+1) % config.training.eval_interval == 0 or is_last_step or grpo_step == 0):
             save_indices = random.sample(range(len(rollout_responses)), min(config.training.n_rollouts_to_log, len(rollout_responses)))
             rollouts_dir = Path(config.paths.output_dir) / "rollouts"
             rollouts_dir.mkdir(parents=True, exist_ok=True)
@@ -295,12 +295,12 @@ if __name__ == "__main__":
         # Inner loop: grpo over the rollout batch
         train_dt = 0.0
         for train_epoch in range(config.training.epochs_per_rollout_batch):
-            pretty_print(f"", title=f"{grpo_step_title} - GRPO epoch {train_epoch:02d}/{config.training.epochs_per_rollout_batch-1:02d}", is_sub_title=True)
+            pretty_print("", title=f"{grpo_step_title} - GRPO epoch {train_epoch:02d}/{config.training.epochs_per_rollout_batch-1:02d}", is_sub_title=True)
 
             # loop through train steps
             num_train_steps = config.training.rollout_batch_size // config.training.train_batch_size
             for train_step in range(num_train_steps):
-                pretty_print(f"", title=f"{grpo_step_title} - GRPO inner step {train_step:02d}/{num_train_steps-1:02d}", is_sub_title=True)
+                pretty_print("", title=f"{grpo_step_title} - GRPO inner step {train_step:02d}/{num_train_steps-1:02d}", is_sub_title=True)
 
                 loss_accum = 0.0
                 entropy_accum = 0.0
@@ -401,7 +401,6 @@ if __name__ == "__main__":
         load_policy_into_vllm_instance(model, vllm_model)
 
         # intermediate evaluation on a subset of val_dataset
-        is_last_step = grpo_step == config.training.n_grpo_steps - 1
         if config.training.eval_interval > 0 and ((grpo_step+1) % config.training.eval_interval == 0 or is_last_step):
             eval_step += 1
             pretty_print(f"Running intermediate evaluation on {config.training.max_val_examples} val examples...", title=f"{grpo_step_title} - Intermediate Evaluation", is_sub_title=True)
