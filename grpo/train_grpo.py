@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 # disable v1 multiprocessing to avoid 'LLMEngine' object has no attribute 'model_executor' error in vLLM 0.11.0
 # otherwise downgrade vllm to 0.10.2
@@ -104,11 +105,11 @@ if __name__ == "__main__":
     pretty_print(None, title="Tokenizer and model initialization")
     # tokenizer
     pretty_print(f"Initializing the tokenizer...")
-    tokenizer = AutoTokenizer.from_pretrained(config.paths.model_path.as_posix())
+    tokenizer = AutoTokenizer.from_pretrained(config.paths.model_path)
     # model
     pretty_print(f"Initializing the model...")
     model = AutoModelForCausalLM.from_pretrained(
-                config.paths.model_path.as_posix(),
+                config.paths.model_path,
                 dtype=DTYPE_MAPPING[config.training.dtype],
                 attn_implementation=config.training.attention_type,
                 device_map=config.training.device
@@ -232,7 +233,7 @@ if __name__ == "__main__":
         # save a random sample of rollouts to disk
         if config.training.n_rollouts_to_log > 0:
             save_indices = random.sample(range(len(rollout_responses)), min(config.training.n_rollouts_to_log, len(rollout_responses)))
-            rollouts_dir = config.paths.output_dir / "rollouts"
+            rollouts_dir = Path(config.paths.output_dir) / "rollouts"
             rollouts_dir.mkdir(parents=True, exist_ok=True)
             rollout_records = [
                 {
@@ -431,7 +432,7 @@ if __name__ == "__main__":
 
         # checkpoint saving
         if config.training.checkpoint_interval > 0 and ((grpo_step+1) % config.training.checkpoint_interval == 0 or is_last_step):
-            ckpt_dir = config.paths.output_dir / f"checkpoint_{grpo_step:03d}"
+            ckpt_dir = Path(config.paths.output_dir) / f"checkpoint_{grpo_step:03d}"
             pretty_print(f"Saving checkpoint to {ckpt_dir}...", title=f"{grpo_step_title} - Checkpoint", is_sub_title=True)
             ckpt_dir.mkdir(parents=True, exist_ok=True)
             model.save_pretrained(ckpt_dir)

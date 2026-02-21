@@ -6,5 +6,5 @@ training:
     - grpo
     - test
   loss_type: reinforce_with_baseline
-  n_grpo_steps: 10
+  n_grpo_steps: 40
   use_compile: true
