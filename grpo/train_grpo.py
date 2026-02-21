@@ -26,7 +26,6 @@ from utils.helper import log_memory, pretty_print, set_seed
 from utils.vllm import init_vllm, load_policy_into_vllm_instance
 from vllm import SamplingParams
 
-
 if __name__ == "__main__":
 
     # -------------------------------------------------------------#
@@ -50,6 +49,7 @@ if __name__ == "__main__":
             project=config.training.wandb_project,
             name=config.training.wandb_run_name or None,
             config=config_dict,
+            tags=config.training.wandb_tags,
         )
         wandb.define_metric("grpo_step")
         wandb.define_metric("eval_step")
