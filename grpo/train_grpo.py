@@ -187,13 +187,14 @@ if __name__ == "__main__":
             sampling_params=sampling_params,
             max_val_examples=config.training.max_val_examples,
         )
-        pretty_print(f"[EVAL] grpo_step: 000 | n_examples: {eval_metrics['n_examples']} | reward: {eval_metrics['mean_reward']:.4f} | answer_reward: {eval_metrics['mean_answer_reward']:.4f} | format_reward: {eval_metrics['mean_format_reward']:.4f}")
+        pretty_print(f"[EVAL] grpo_step: {0:03d} | eval_step: {eval_step:03d} | n: {eval_metrics['n_examples']} | rew: {eval_metrics['mean_reward']:.4f} | ans_rew: {eval_metrics['mean_answer_reward']:.4f} | fmt_rew: {eval_metrics['mean_format_reward']:.4f}")
         if use_wandb:
             wandb.log({
                 "eval/reward": eval_metrics['mean_reward'],
                 "eval/answer_reward": eval_metrics['mean_answer_reward'],
                 "eval/format_reward": eval_metrics['mean_format_reward'],
                 "eval_step": eval_step,
+                "grpo_step": 0,
             })
             eval_step += 1
 
@@ -201,6 +202,8 @@ if __name__ == "__main__":
     for grpo_step in range(config.training.n_grpo_steps):
         grpo_step_title = f"GRPO step {grpo_step:03d}/{config.training.n_grpo_steps-1:03d}"
         pretty_print(None, title=grpo_step_title)
+
+        grpo_step_start = time.time()
 
         # get a random batch of prompts
         cur_batch = random.sample(train_dataset, n_prompts_per_rollout_batch)
@@ -211,7 +214,9 @@ if __name__ == "__main__":
         rep_rollout_ground_truths = [ex['answer'] for ex in cur_batch for _ in range(config.training.group_size)]
 
         # generate rollouts
+        rollout_start = time.time()
         rollout_outputs = vllm_model.generate(rep_rollout_prompts, sampling_params)
+        rollout_dt = time.time() - rollout_start
         rollout_responses = [output.outputs[0].text for output in rollout_outputs]
 
         # compute rewards
@@ -287,6 +292,7 @@ if __name__ == "__main__":
         model.train()
 
         # Inner loop: grpo over the rollout batch
+        train_dt = 0.0
         for train_epoch in range(config.training.epochs_per_rollout_batch):
             pretty_print(f"", title=f"{grpo_step_title} - GRPO epoch {train_epoch:02d}/{config.training.epochs_per_rollout_batch-1:02d}", is_sub_title=True)
 
@@ -352,6 +358,7 @@ if __name__ == "__main__":
                 optimizer.zero_grad(set_to_none=True)
 
                 dt = time.time() - start_time
+                train_dt += dt
 
                 # calculate mean rewards for the rollout batch
                 step_mean_format_reward = 0.0
@@ -364,7 +371,7 @@ if __name__ == "__main__":
                     step_mean_reward += r["reward"] / rewards_len
 
                 # print the step metrics
-                pretty_print(f"[TRAIN] grpo_step: {grpo_step:03d} | loss: {loss_accum.item():.4f} | entropy: {avg_entropy:.4f} | reward: {step_mean_reward:.4f} | answer_reward: {step_mean_answer_reward:.4f} | format_reward: {step_mean_format_reward:.4f} | clip_frac: {avg_clip_fraction:.4f} | mean_ratio: {avg_mean_ratio:.4f} | grad_norm: {grad_norm:.4f} | lr: {config.training.learning_rate:.6f} | mean_response_len: {mean_response_length:.1f} | time: {dt:.2f}s")
+                pretty_print(f"[TRAIN] grpo_step: {grpo_step:03d} | loss: {loss_accum.item():.4f} | ent: {avg_entropy:.4f} | rew: {step_mean_reward:.4f} | ans_rew: {step_mean_answer_reward:.4f} | fmt_rew: {step_mean_format_reward:.4f} | clip: {avg_clip_fraction:.4f} | ratio: {avg_mean_ratio:.4f} | gnorm: {grad_norm:.4f} | lr: {config.training.learning_rate:.6f} | resp_len: {mean_response_length:.1f}")
                 if use_wandb:
                     wandb.log({
                         "train/loss": loss_accum.item(),
@@ -381,6 +388,9 @@ if __name__ == "__main__":
 
                 torch.cuda.empty_cache()
 
+        eval_dt = 0.0
+        step_dt = time.time() - grpo_step_start
+
         if config.training.track_peak_memory:
             log_memory(f"[{grpo_step_title}] after training inner loop (peak = training VRAM)", config.training.device, reset_after=True)
         # wake vLLM before loading updated policy weights and next generation step
@@ -392,7 +402,9 @@ if __name__ == "__main__":
         # intermediate evaluation on a subset of val_dataset
         is_last_step = grpo_step == config.training.n_grpo_steps - 1
         if config.training.eval_interval > 0 and ((grpo_step+1) % config.training.eval_interval == 0 or is_last_step):
+            eval_step += 1
             pretty_print(f"Running intermediate evaluation on {config.training.max_val_examples} val examples...", title=f"{grpo_step_title} - Intermediate Evaluation", is_sub_title=True)
+            eval_start = time.time()
             eval_metrics = evaluate_vllm(
                 vllm_model=vllm_model,
                 reward_fn=reward_fn,
@@ -401,7 +413,8 @@ if __name__ == "__main__":
                 sampling_params=sampling_params,
                 max_val_examples=config.training.max_val_examples,
             )
-            pretty_print(f"[EVAL] grpo_step: {grpo_step:03d} | n_examples: {eval_metrics['n_examples']} | reward: {eval_metrics['mean_reward']:.4f} | answer_reward: {eval_metrics['mean_answer_reward']:.4f} | format_reward: {eval_metrics['mean_format_reward']:.4f}")
+            eval_dt = time.time() - eval_start
+            pretty_print(f"[EVAL] grpo_step: {grpo_step:03d} | eval_step: {eval_step:03d} | n: {eval_metrics['n_examples']} | rew: {eval_metrics['mean_reward']:.4f} | ans_rew: {eval_metrics['mean_answer_reward']:.4f} | fmt_rew: {eval_metrics['mean_format_reward']:.4f}")
             if use_wandb:
                 wandb.log({
                     "eval/reward": eval_metrics['mean_reward'],
@@ -410,7 +423,11 @@ if __name__ == "__main__":
                     "eval_step": eval_step,
                     "grpo_step": grpo_step,
                 })
-                eval_step += 1
+        
+        # print the timing metrics
+        pretty_print(f"[DT] grpo_step: {grpo_step:03d} | rollout_dt: {rollout_dt:.1f}s | train_dt: {train_dt:.1f}s | eval_dt: {eval_dt:.1f}s | step_dt: {step_dt:.1f}s")
+        if use_wandb:
+            wandb.log({"train/rollout_dt": rollout_dt, "train/train_dt": train_dt, "train/eval_dt": eval_dt, "train/step_dt": step_dt, "grpo_step": grpo_step})
 
         # checkpoint saving
         if config.training.checkpoint_interval > 0 and ((grpo_step+1) % config.training.checkpoint_interval == 0 or is_last_step):
