@@ -212,7 +212,7 @@ def grpo_microbatch_train_step(
     elif norm_mode == "microbatch":
         # normalize by the longest response in the batch
         norm_constant = response_mask.sum(dim=-1).max().item()
-        policy_gradient_loss = masked_normalize(policy_gradient_loss, response_mask, dim=0, normalize_constant=norm_constant)
+        policy_gradient_loss = masked_normalize(policy_gradient_loss, response_mask, dim=-1, normalize_constant=norm_constant)
     else:
         raise ValueError(f"Invalid norm mode: {norm_mode}")
     
