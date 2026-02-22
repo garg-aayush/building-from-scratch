@@ -15,15 +15,33 @@
 
 # OUTPUT_DIR="/results/lr_sweep"
 
+# # -------------------------------------------------------------#
+# # Baselines
+# # -------------------------------------------------------------#
+# CONFIGS=(
+#     # "configs/baselines/no_baseline.yaml"
+#     # "configs/baselines/reinforce_baseline.yaml"
+#     "configs/baselines/no_baseline_lr1.5e-5.yaml"
+# )
+# OUTPUT_DIR="/results/baselines"
+
+# # -------------------------------------------------------------#
+# # Length Normalization
+# # -------------------------------------------------------------#
+# CONFIGS=(
+#     "configs/length_normalization/len_norm_mean.yaml"
+#     "configs/length_normalization/len_norm_constant.yaml"
+#     "configs/length_normalization/len_norm_microbatch.yaml"
+# )
+# OUTPUT_DIR="/results/length_normalization"
+
 # -------------------------------------------------------------#
-# Baselines
+# Std Dev Normalization
 # -------------------------------------------------------------#
 CONFIGS=(
-    # "configs/baselines/no_baseline.yaml"
-    # "configs/baselines/reinforce_baseline.yaml"
-    "configs/baselines/no_baseline_lr1.5e-5.yaml"
+    "configs/std_dev/std_dev.yaml"
 )
-OUTPUT_DIR="/results/baselines"
+OUTPUT_DIR="/results/std_dev"
 
 for config in "${CONFIGS[@]}"; do
     echo "Running $config"
