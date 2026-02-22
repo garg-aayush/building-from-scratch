@@ -1,0 +1,10 @@
+paths:
+  output_dir: /home/aayush/RESULTS/GRPO/test
+training:
+  wandb_run_name: test
+  wandb_tags:
+    - grpo
+    - test
+  loss_type: reinforce_with_baseline
+  n_grpo_steps: 40
+  use_compile: true

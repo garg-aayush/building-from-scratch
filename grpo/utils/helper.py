@@ -9,6 +9,18 @@ import torch
 # -------------------------------------------------------------#
 # functions to set the seed
 # -------------------------------------------------------------#
+def log_memory(label: str, device: str, reset_after: bool = False):
+    """Log current and peak VRAM at a named checkpoint. Optionally reset peak stats after logging."""
+    cur_gb  = torch.cuda.memory_allocated(device) / 1024**3
+    peak_gb = torch.cuda.max_memory_allocated(device) / 1024**3
+    pretty_print(f"[MEM] {label}: current={cur_gb:.2f}GB  peak_since_reset={peak_gb:.2f}GB")
+    if reset_after:
+        torch.cuda.reset_peak_memory_stats(device)
+
+
+# -------------------------------------------------------------#
+# functions to set the seed
+# -------------------------------------------------------------#
 def set_seed(seed: int):
     """
     Set the seed for the random number generators.

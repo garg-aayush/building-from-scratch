@@ -1,12 +1,11 @@
 from typing import Callable, List
 
-from transformers import PreTrainedModel
-from vllm import LLM, SamplingParams
-from vllm.model_executor import set_random_seed as vllm_set_random_seed
-
 from configs.defaults import Config
+from transformers import PreTrainedModel
 from utils.constants import DTYPE_MAPPING
 from utils.helper import pretty_print
+from vllm import LLM, SamplingParams
+from vllm.model_executor import set_random_seed as vllm_set_random_seed
 
 
 # -------------------------------------------------------------#
@@ -26,10 +25,11 @@ def init_vllm(seed: int, cfg: Config):
     # Note: Removed profiling_patch as it's vLLM version-dependent and causes AttributeError in newer versions
     # with world_size_patch:
     vllm_init_params = {
-        "model": cfg.paths.model_path.as_posix(),
+        "model": cfg.paths.model_path,
         "gpu_memory_utilization": cfg.vllm.gpu_memory_utilization,
         "dtype": DTYPE_MAPPING[cfg.vllm.dtype],
         "enable_prefix_caching": cfg.vllm.enable_prefix_caching,
+        "enable_sleep_mode": cfg.training.use_vllm_sleep_mode,
     }
     pretty_print(vllm_init_params, title="vLLM model initialization parameters")
     return LLM(**vllm_init_params)

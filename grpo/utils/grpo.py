@@ -83,27 +83,24 @@ def compute_grpo_clip_loss(
         per token grpo clipped loss (bs, seq_len)
         metadata
     """
-    # compute ratio, torch.exp as it is log probs
-    unclipped_ratio = torch.exp(policy_log_probs - old_log_probs)
-    
-    if not clip:
-        return -(advantages * unclipped_ratio), {'clipped': False}
-    
-    # compute clipped ratio
-    clipped_ratio = torch.clamp(unclipped_ratio, 1.0 - cliprange, 1.0 + cliprange)
+    ratios = torch.exp(policy_log_probs - old_log_probs)
+    scores = ratios * advantages
+    mean_ratio = ratios.mean()
 
-    # compute loss
-    adv_unclipped_ratio = advantages * unclipped_ratio
-    adv_clipped_ratio = advantages * clipped_ratio
-    loss = -torch.min(adv_unclipped_ratio, adv_clipped_ratio)
-    
-    # check if each token was clipped
-    clipped = adv_clipped_ratio < adv_unclipped_ratio
-    metadata = {
-        'clipped': clipped,
+    if not clip:
+        return -scores, {"clip_fraction": 0.0, "mean_ratio": mean_ratio}
+
+    # clip the ratios
+    clipped_ratios = torch.clamp(ratios, 1.0 - cliprange, 1.0 + cliprange)
+    clipped_scores = clipped_ratios * advantages
+
+    # compute the clip fraction
+    clip_fraction = (~torch.isclose(scores, clipped_scores)).float().mean()
+
+    return -torch.min(scores, clipped_scores), {
+        "clip_fraction": clip_fraction,
+        "mean_ratio": mean_ratio,
     }
-    
-    return loss, metadata
 
 
 def compute_policy_gradient_loss(
@@ -215,7 +212,7 @@ def grpo_microbatch_train_step(
     elif norm_mode == "microbatch":
         # normalize by the longest response in the batch
         norm_constant = response_mask.sum(dim=-1).max().item()
-        policy_gradient_loss = masked_normalize(policy_gradient_loss, response_mask, dim=0, normalize_constant=norm_constant)
+        policy_gradient_loss = masked_normalize(policy_gradient_loss, response_mask, dim=-1, normalize_constant=norm_constant)
     else:
         raise ValueError(f"Invalid norm mode: {norm_mode}")
     

@@ -1,0 +1,11 @@
+paths:
+  output_dir: /home/aayush/RESULTS/GRPO/test_modal
+training:
+  wandb_run_name: test_modal
+  wandb_tags:
+    - grpo
+    - test
+    - modal
+  loss_type: reinforce_with_baseline
+  n_grpo_steps: 20
+  use_compile: true

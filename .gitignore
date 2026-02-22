@@ -216,3 +216,6 @@ grpo/tests/
 sft/results/instruct/baseline/
 filtered_train.jsonl
 sft/assignments/
+
+# logs
+grpo/logs/
