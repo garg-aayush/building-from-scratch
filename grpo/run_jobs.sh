@@ -35,22 +35,42 @@
 # )
 # OUTPUT_DIR="/results/length_normalization"
 
+# # -------------------------------------------------------------#
+# # Std Dev Normalization
+# # -------------------------------------------------------------#
+# CONFIGS=(
+#     "configs/std_dev/std_dev.yaml"
+# )
+# OUTPUT_DIR="/results/std_dev"
+
+# # -------------------------------------------------------------#
+# # Off-Policy Sweep
+# # -------------------------------------------------------------#
+# CONFIGS=(
+#     "configs/off_policy_sweep/e1_tb256_ga64.yaml"
+#     "configs/off_policy_sweep/e1_tb128_ga32.yaml"
+#     "configs/off_policy_sweep/e2_tb256_ga64.yaml"
+#     "configs/off_policy_sweep/e2_tb128_ga32.yaml"
+#     "configs/off_policy_sweep/e4_tb256_ga64.yaml"
+#     "configs/off_policy_sweep/e4_tb128_ga32.yaml"
+#     "configs/off_policy_sweep/e4_tb64_ga16.yaml"
+# )
+# OUTPUT_DIR="/results/off_policy_sweep"
+
+
 # -------------------------------------------------------------#
-# Std Dev Normalization
+# Off-Policy Sweep
 # -------------------------------------------------------------#
 CONFIGS=(
-    "configs/std_dev/std_dev.yaml"
+    "configs/off_policy_sweep/full_e1_tb256_ga64.yaml"
+    "configs/off_policy_sweep/full_e1_tb128_ga32.yaml"
+    "configs/off_policy_sweep/full_e2_tb256_ga64.yaml"
 )
-OUTPUT_DIR="/results/std_dev"
+OUTPUT_DIR="/results/off_policy_sweep"
+
 
 for config in "${CONFIGS[@]}"; do
     echo "Running $config"
-    # cmd="modal run --detach train_on_modal.py \
-    #     --config $config \
-    #     --output-dir /results/lr_sweep/$(basename $config) \
-    #     --spawn"
-    # echo $cmd, remove .yaml from the config name
     dir_name=$(basename $config .yaml)
-    # echo $dir_name
     modal run --detach train_on_modal.py --config $config --output-dir $OUTPUT_DIR/$dir_name --spawn
 done
