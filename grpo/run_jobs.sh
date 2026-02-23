@@ -58,16 +58,26 @@
 # OUTPUT_DIR="/results/off_policy_sweep"
 
 
-# -------------------------------------------------------------#
-# Off-Policy Sweep
-# -------------------------------------------------------------#
-CONFIGS=(
-    "configs/off_policy_sweep/full_e1_tb256_ga64.yaml"
-    "configs/off_policy_sweep/full_e1_tb128_ga32.yaml"
-    "configs/off_policy_sweep/full_e2_tb256_ga64.yaml"
-)
-OUTPUT_DIR="/results/off_policy_sweep"
+# # -------------------------------------------------------------#
+# # Off-Policy Sweep
+# # -------------------------------------------------------------#
+# CONFIGS=(
+#     "configs/off_policy_sweep/full_e1_tb256_ga64.yaml"
+#     "configs/off_policy_sweep/full_e1_tb128_ga32.yaml"
+#     "configs/off_policy_sweep/full_e2_tb256_ga64.yaml"
+# )
+# OUTPUT_DIR="/results/off_policy_sweep"
 
+
+# -------------------------------------------------------------#
+# Question Only
+# -------------------------------------------------------------#
+# Make sure to change the prompt template in train_on_modal.py to question_only.prompt
+# and the reward function to question_only_reward_fn in train_grpo.py
+CONFIGS=(
+    "configs/question_only/e1_tb256_ga64.yaml"
+)
+OUTPUT_DIR="/results/question_only"
 
 for config in "${CONFIGS[@]}"; do
     echo "Running $config"
