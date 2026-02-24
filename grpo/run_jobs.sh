@@ -69,18 +69,35 @@
 # OUTPUT_DIR="/results/off_policy_sweep"
 
 
+# # -------------------------------------------------------------#
+# # Question Only
+# # -------------------------------------------------------------#
+# # Make sure to change the prompt template in train_on_modal.py to question_only.prompt
+# # and the reward function to question_only_reward_fn in train_grpo.py
+# CONFIGS=(
+#     "configs/question_only/e1_tb256_ga64.yaml"
+# )
+# OUTPUT_DIR="/results/question_only"
+
 # -------------------------------------------------------------#
-# Question Only
+# SFT-GRPO
 # -------------------------------------------------------------#
-# Make sure to change the prompt template in train_on_modal.py to question_only.prompt
-# and the reward function to question_only_reward_fn in train_grpo.py
+# make sure to pass model-dir as /data/models/qwen-2.5-math-sft-checkpoint56 to start the training from the sft checkpoint
 CONFIGS=(
-    "configs/question_only/e1_tb256_ga64.yaml"
+    # "configs/sft_grpo/e1_tb256_ga64.yaml"
+    # "configs/sft_grpo/e1_tb256_ga64_lr1.5e-5.yaml"
+    # "configs/sft_grpo/e1_tb256_ga64_ckpt20.yaml"
+    "configs/sft_grpo/e1_tb256_ga64_ckpt10.yaml"
 )
-OUTPUT_DIR="/results/question_only"
+OUTPUT_DIR="/results/sft_grpo"
+MODEL_DIR="/data/models/qwen-2.5-math-sft-checkpoint10"
 
 for config in "${CONFIGS[@]}"; do
     echo "Running $config"
     dir_name=$(basename $config .yaml)
-    modal run --detach train_on_modal.py --config $config --output-dir $OUTPUT_DIR/$dir_name --spawn
+    if [ $MODEL_DIR ]; then
+        modal run --detach train_on_modal.py --config $config --output-dir $OUTPUT_DIR/$dir_name --model-dir $MODEL_DIR --spawn
+    else
+        modal run --detach train_on_modal.py --config $config --output-dir $OUTPUT_DIR/$dir_name --spawn
+    fi
 done
