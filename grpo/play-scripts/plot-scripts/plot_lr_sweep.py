@@ -2,9 +2,10 @@
 """
 Plot learning rate sweep results for GRPO experiments, fetched from W&B.
 
-Creates a single-row figure with 2 subplots:
+Creates a single-row figure with 3 subplots:
 1. Eval Reward
 2. Train Entropy
+3. Mean Response Length
 """
 
 from pathlib import Path
@@ -51,6 +52,12 @@ METRICS = {
     "train/entropy": {
         "ylabel": "Token Entropy",
         "title": "Token Entropy",
+        "style": "-",
+        "markersize": 0,
+    },
+    "train/mean_response_length": {
+        "ylabel": "Mean Response Length (tokens)",
+        "title": "Mean Response Length",
         "style": "-",
         "markersize": 0,
     },
@@ -106,8 +113,8 @@ def plot_results(
     all_data: dict[str, dict[str, pd.DataFrame]],
     output_path: Path,
 ) -> None:
-    """Create a 1x2 figure with the two metric plots."""
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+    """Create a 1x3 figure with the three metric plots."""
+    fig, axes = plt.subplots(1, 3, figsize=(18, 4.5))
 
     fig.suptitle(
         "Learning rate sweep: GRPO experiments",
