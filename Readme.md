@@ -9,7 +9,8 @@ building-from-scratch/
 ├── gpt-2/          # GPT‑2 (124M) reproduction + improvements; training runs, notes
 ├── bpe/            # BPE tokenizer from scratch; training/encoding optimizations, custom tokenizers
 ├── llm-inference/  # LLM inference from scratch; sampling strategies, KV cache, speculative decoding
-└── sft/            # Supervised fine-tuning from scratch; reasoning & instruction SFT experiments
+├── sft/            # Supervised fine-tuning from scratch; reasoning & instruction SFT experiments
+└── grpo/           # GRPO from scratch; Qwen2.5-Math-1.5B with verifiable rewards + ablation studies
 ```
 
 ## Basic-GPT
@@ -69,3 +70,10 @@ I implemented Supervised Fine-Tuning from scratch, running two categories of SFT
 ![Instruction SFT Results](sft/results/plots/instruct_finetune_results_nomask.png)
 
 [Read more ->](sft/Readme.md)
+
+## GRPO
+I implemented Group Relative Policy Optimization (GRPO) from scratch and trained [Qwen2.5-Math-1.5B](https://huggingface.co/Qwen/Qwen2.5-Math-1.5B) with verifiable math rewards, reaching **~75% reward accuracy** on MATH validation (up from ~3% base model). Beyond just getting the implementation working, most importantly I ran a series of ablation studies to build intuition on what actually matters in GRPO training: learning rate, baseline subtraction, length normalization, std dev normalization, off-policy training, prompt template, and SFT checkpoint initialization.
+
+![Best GRPO run](grpo/results/best_run/best_run.png)
+
+[Read more ->](grpo/Readme.md)
