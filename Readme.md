@@ -5,12 +5,13 @@ A hands-on repo where I build language models and related concepts from first pr
 ## Repo structure
 ```
 building-from-scratch/
-├── basic-gpt/      # Character-level GPT built incrementally; notebooks, scripts
-├── gpt-2/          # GPT‑2 (124M) reproduction + improvements; training runs, notes
-├── bpe/            # BPE tokenizer from scratch; training/encoding optimizations, custom tokenizers
-├── llm-inference/  # LLM inference from scratch; sampling strategies, KV cache, speculative decoding
-├── sft/            # Supervised fine-tuning from scratch; reasoning & instruction SFT experiments
-└── grpo/           # GRPO from scratch; Qwen2.5-Math-1.5B with verifiable rewards + ablation studies
+├── basic-gpt/        # Character-level GPT built incrementally; notebooks, scripts
+├── gpt-2/            # GPT‑2 (124M) reproduction + improvements; training runs, notes
+├── bpe/              # BPE tokenizer from scratch; training/encoding optimizations, custom tokenizers
+├── llm-inference/    # LLM inference from scratch; sampling strategies, KV cache, speculative decoding
+├── sft/              # Supervised fine-tuning from scratch; reasoning & instruction SFT experiments
+├── expert-iteration/ # Expert Iteration experiments; self-improvement for math reasoning
+└── grpo/             # GRPO from scratch; Qwen2.5-Math-1.5B with verifiable rewards + ablation studies
 ```
 
 ## Basic-GPT
@@ -70,6 +71,19 @@ I implemented Supervised Fine-Tuning from scratch, running two categories of SFT
 ![Instruction SFT Results](sft/results/plots/instruct_finetune_results_nomask.png)
 
 [Read more ->](sft/Readme.md)
+
+## Expert Iteration
+I implemented Expert Iteration from scratch following Stanford's [CS336 Assignment 5](https://github.com/stanford-cs336/assignment5-alignment) for math reasoning. Unlike SFT, Expert Iteration does not require expensive human-annotated reasoning traces. The model generates candidate solutions, filters for correct ones and trains on its own successful attempts.
+
+![Expert Iteration Results](expert-iteration/plots/ei_multiepoch_plot.png)
+
+| Method | Configuration | Validation Accuracy |
+|--------|---------------|---------------------|
+| Baseline | Untrained Qwen2.5-Math-1.5B | 2.9% |
+| **Expert Iteration (best)** | D=1024, R=4, 2 epochs | **47.1%** |
+| **SFT (best)** | Filtered GPT traces, 2 epochs | **53.4%** |
+
+[Read more ->](expert-iteration/Readme.md)
 
 ## GRPO
 I implemented Group Relative Policy Optimization (GRPO) from scratch and trained [Qwen2.5-Math-1.5B](https://huggingface.co/Qwen/Qwen2.5-Math-1.5B) with verifiable math rewards, reaching **~75% reward accuracy** on MATH validation (up from ~3% base model). Beyond just getting the implementation working, most importantly I ran a series of ablation studies to build intuition on what actually matters in GRPO training: learning rate, baseline subtraction, length normalization, std dev normalization, off-policy training, prompt template, and SFT checkpoint initialization.
