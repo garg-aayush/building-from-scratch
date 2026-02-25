@@ -15,24 +15,89 @@
 
 # OUTPUT_DIR="/results/lr_sweep"
 
+# # -------------------------------------------------------------#
+# # Baselines
+# # -------------------------------------------------------------#
+# CONFIGS=(
+#     # "configs/baselines/no_baseline.yaml"
+#     # "configs/baselines/reinforce_baseline.yaml"
+#     "configs/baselines/no_baseline_lr1.5e-5.yaml"
+# )
+# OUTPUT_DIR="/results/baselines"
+
+# # -------------------------------------------------------------#
+# # Length Normalization
+# # -------------------------------------------------------------#
+# CONFIGS=(
+#     "configs/length_normalization/len_norm_mean.yaml"
+#     "configs/length_normalization/len_norm_constant.yaml"
+#     "configs/length_normalization/len_norm_microbatch.yaml"
+# )
+# OUTPUT_DIR="/results/length_normalization"
+
+# # -------------------------------------------------------------#
+# # Std Dev Normalization
+# # -------------------------------------------------------------#
+# CONFIGS=(
+#     "configs/std_dev/std_dev.yaml"
+# )
+# OUTPUT_DIR="/results/std_dev"
+
+# # -------------------------------------------------------------#
+# # Off-Policy Sweep
+# # -------------------------------------------------------------#
+# CONFIGS=(
+#     "configs/off_policy_sweep/e1_tb256_ga64.yaml"
+#     "configs/off_policy_sweep/e1_tb128_ga32.yaml"
+#     "configs/off_policy_sweep/e2_tb256_ga64.yaml"
+#     "configs/off_policy_sweep/e2_tb128_ga32.yaml"
+#     "configs/off_policy_sweep/e4_tb256_ga64.yaml"
+#     "configs/off_policy_sweep/e4_tb128_ga32.yaml"
+#     "configs/off_policy_sweep/e4_tb64_ga16.yaml"
+# )
+# OUTPUT_DIR="/results/off_policy_sweep"
+
+
+# # -------------------------------------------------------------#
+# # Off-Policy Sweep
+# # -------------------------------------------------------------#
+# CONFIGS=(
+#     "configs/off_policy_sweep/full_e1_tb256_ga64.yaml"
+#     "configs/off_policy_sweep/full_e1_tb128_ga32.yaml"
+#     "configs/off_policy_sweep/full_e2_tb256_ga64.yaml"
+# )
+# OUTPUT_DIR="/results/off_policy_sweep"
+
+
+# # -------------------------------------------------------------#
+# # Question Only
+# # -------------------------------------------------------------#
+# # Make sure to change the prompt template in train_on_modal.py to question_only.prompt
+# # and the reward function to question_only_reward_fn in train_grpo.py
+# CONFIGS=(
+#     "configs/question_only/e1_tb256_ga64.yaml"
+# )
+# OUTPUT_DIR="/results/question_only"
+
 # -------------------------------------------------------------#
-# Baselines
+# SFT-GRPO
 # -------------------------------------------------------------#
+# make sure to pass model-dir as /data/models/qwen-2.5-math-sft-checkpoint56 to start the training from the sft checkpoint
 CONFIGS=(
-    # "configs/baselines/no_baseline.yaml"
-    # "configs/baselines/reinforce_baseline.yaml"
-    "configs/baselines/no_baseline_lr1.5e-5.yaml"
+    # "configs/sft_grpo/e1_tb256_ga64.yaml"
+    # "configs/sft_grpo/e1_tb256_ga64_lr1.5e-5.yaml"
+    # "configs/sft_grpo/e1_tb256_ga64_ckpt20.yaml"
+    "configs/sft_grpo/e1_tb256_ga64_ckpt10.yaml"
 )
-OUTPUT_DIR="/results/baselines"
+OUTPUT_DIR="/results/sft_grpo"
+MODEL_DIR="/data/models/qwen-2.5-math-sft-checkpoint10"
 
 for config in "${CONFIGS[@]}"; do
     echo "Running $config"
-    # cmd="modal run --detach train_on_modal.py \
-    #     --config $config \
-    #     --output-dir /results/lr_sweep/$(basename $config) \
-    #     --spawn"
-    # echo $cmd, remove .yaml from the config name
     dir_name=$(basename $config .yaml)
-    # echo $dir_name
-    modal run --detach train_on_modal.py --config $config --output-dir $OUTPUT_DIR/$dir_name --spawn
+    if [ $MODEL_DIR ]; then
+        modal run --detach train_on_modal.py --config $config --output-dir $OUTPUT_DIR/$dir_name --model-dir $MODEL_DIR --spawn
+    else
+        modal run --detach train_on_modal.py --config $config --output-dir $OUTPUT_DIR/$dir_name --spawn
+    fi
 done

@@ -4,12 +4,18 @@
 Run from inside the grpo/ directory:
 
     # Download model weights (default: Qwen/Qwen2.5-Math-1.5B):
-    modal run setup_modal.py::setup_model
-    modal run setup_modal.py::setup_model --repo-id Qwen/Qwen2.5-Math-1.5B
+    modal run utils/setup_modal.py::setup_model
+    modal run utils/setup_modal.py::setup_model --repo-id Qwen/Qwen2.5-Math-1.5B
+
+    # Download a specific checkpoint subfolder from a HF repo:
+    modal run utils/setup_modal.py::setup_model \
+        --repo-id garg-aayush/qwen-2.5-math-sft-filtered-2epoch \
+        --subfolder checkpoint_56 \
+        --dest-name qwen-2.5-math-sft-checkpoint56
 
     # Upload local training data:
-    modal run setup_modal.py::upload_data
-    modal run setup_modal.py::upload_data --local-data-dir /home/aayush/DATA/GRPO
+    modal run utils/setup_modal.py::upload_data
+    modal run utils/setup_modal.py::upload_data --local-data-dir /home/aayush/DATA/GRPO
 """
 
 import os
@@ -47,17 +53,41 @@ _hf_image = (
     secrets=[modal.Secret.from_name("huggingface-secret")],
     timeout=3600,
 )
-def _download_model_remote(repo_id: str, revision: str | None):
+def _download_model_remote(
+    repo_id: str,
+    revision: str | None,
+    subfolder: str | None,
+    dest_name: str | None,
+):
+    import shutil
     from huggingface_hub import snapshot_download
-    dest = os.path.join(CONTAINER_DATA_DIR, "models", repo_id.split("/")[-1])
+
+    model_name = dest_name or repo_id.split("/")[-1]
+    dest = os.path.join(CONTAINER_DATA_DIR, "models", model_name)
     os.makedirs(dest, exist_ok=True)
-    print(f"Downloading {repo_id} -> {dest} ...")
+
+    allow_patterns = [f"{subfolder}/**", f"{subfolder}/*"] if subfolder else None
+    print(f"Downloading {repo_id}{f'/{subfolder}' if subfolder else ''} -> {dest} ...")
+
+    # Always download directly to dest (on the volume) to avoid cross-device moves.
     snapshot_download(
         repo_id=repo_id,
         local_dir=dest,
         revision=revision,
+        allow_patterns=allow_patterns,
         token=os.environ.get("HF_TOKEN"),
     )
+
+    if subfolder:
+        # Files land at dest/<subfolder>/; move them up to dest/
+        src = os.path.join(dest, subfolder)
+        if not os.path.isdir(src):
+            raise FileNotFoundError(f"Subfolder '{subfolder}' not found in repo")
+        for item in os.listdir(src):
+            os.rename(os.path.join(src, item), os.path.join(dest, item))
+        os.rmdir(src)
+        print(f"  moved {subfolder}/ contents up to {dest}")
+
     data_volume.commit()
     print("Done.")
 
@@ -83,10 +113,21 @@ def _write_files_remote(file_data: list[tuple[str, bytes]]):
 def setup_model(
     repo_id: str = "Qwen/Qwen2.5-Math-1.5B",
     revision: str = None,
+    subfolder: str = None,
+    dest_name: str = None,
 ):
-    """Download a Hugging Face model into the grpo-data volume."""
-    print(f"Downloading {repo_id} into grpo-data volume ...")
-    _download_model_remote.remote(repo_id=repo_id, revision=revision)
+    """Download a Hugging Face model into the grpo-data volume.
+
+    Use --subfolder to pull only a specific checkpoint directory from the repo.
+    Use --dest-name to give the downloaded model a custom name under /data/models/.
+    """
+    print(f"Downloading {repo_id}{f'/{subfolder}' if subfolder else ''} into grpo-data volume ...")
+    _download_model_remote.remote(
+        repo_id=repo_id,
+        revision=revision,
+        subfolder=subfolder,
+        dest_name=dest_name,
+    )
 
 
 @app.local_entrypoint()

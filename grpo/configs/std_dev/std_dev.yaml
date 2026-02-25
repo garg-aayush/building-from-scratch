@@ -1,0 +1,25 @@
+paths:
+  output_dir: /results/length_normalization/std_dev
+training:
+  wandb_run_name: std_dev
+  wandb_tags:
+    - grpo
+    - h100
+    - modal
+    - std_dev
+
+  use_compile: false
+  track_peak_memory: false
+  use_gradient_checkpointing: false
+  use_bnb_adamw8bit: false
+  use_vllm_sleep_mode: true
+  gradient_accumulation_steps: 64
+  old_log_probs_train_size: 4
+  loss_type: reinforce_with_baseline
+  n_grpo_steps: 200
+  learning_rate: 3e-5
+  checkpoint_interval: 8
+  normalize_mode: mean
+  use_std_normalization: false
+vllm:
+  gpu_memory_utilization: 0.2

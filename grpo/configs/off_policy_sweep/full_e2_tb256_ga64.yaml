@@ -1,0 +1,30 @@
+paths:
+  output_dir: /results/off_policy_sweep/full_e2_tb256_ga64
+training:
+  wandb_run_name: off_policy_full_e2_tb256_ga64
+  wandb_tags:
+    - grpo
+    - h100
+    - modal
+    - off_policy_sweep
+    - full_sweep
+
+  use_compile: false
+  track_peak_memory: false
+  use_gradient_checkpointing: false
+  use_bnb_adamw8bit: false
+  use_vllm_sleep_mode: true
+  old_log_probs_train_size: 4
+  loss_type: grpo_clip
+  n_grpo_steps: 200
+  learning_rate: 3e-5
+  checkpoint_interval: 8
+  normalize_mode: mean
+  use_std_normalization: true
+
+  # mild off-policy via epochs: 2 epochs, full batch -> 2 opt steps per GRPO step
+  epochs_per_rollout_batch: 2
+  train_batch_size: 256
+  gradient_accumulation_steps: 64   # micro_batch_size = 256/64 = 4
+vllm:
+  gpu_memory_utilization: 0.2

@@ -139,7 +139,7 @@ def compute_policy_gradient_loss(
     
     assert old_log_probs is not None, f"old_log_probs is required for {loss_type} loss type"
     if loss_type == "grpo_no_clip":
-        return compute_grpo_clip_loss(advantages, policy_log_probs, old_log_probs, cliprange, clip)
+        return compute_grpo_clip_loss(advantages, policy_log_probs, old_log_probs, cliprange, clip=False)
     
     assert cliprange is not None, f"cliprange is required for {loss_type} loss type"
     if loss_type == "grpo_clip":

@@ -1,0 +1,30 @@
+paths:
+  output_dir: /results/off_policy_sweep/e1_tb128_ga32
+training:
+  wandb_run_name: off_policy_e1_tb128_ga32
+  wandb_tags:
+    - grpo
+    - h100
+    - modal
+    - off_policy_sweep
+    - broad_sweep
+
+  use_compile: false
+  track_peak_memory: false
+  use_gradient_checkpointing: false
+  use_bnb_adamw8bit: false
+  use_vllm_sleep_mode: true
+  old_log_probs_train_size: 4
+  loss_type: grpo_clip
+  n_grpo_steps: 50
+  learning_rate: 3e-5
+  checkpoint_interval: 8
+  normalize_mode: mean
+  use_std_normalization: true
+
+  # mild off-policy via smaller batch: 1 epoch, half batch -> 2 opt steps per GRPO step
+  epochs_per_rollout_batch: 1
+  train_batch_size: 128
+  gradient_accumulation_steps: 32   # micro_batch_size = 128/32 = 4
+vllm:
+  gpu_memory_utilization: 0.2

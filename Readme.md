@@ -5,12 +5,13 @@ A hands-on repo where I build language models and related concepts from first pr
 ## Repo structure
 ```
 building-from-scratch/
-├── basic-gpt/          # Character-level GPT built incrementally; notebooks, scripts
-├── gpt-2/              # GPT-2 (124M) reproduction + improvements; training runs, notes
-├── bpe/                # BPE tokenizer from scratch; training/encoding optimizations, custom tokenizers
-├── llm-inference/      # LLM inference from scratch; sampling strategies, KV cache, speculative decoding
-├── sft/                # Supervised fine-tuning from scratch; reasoning & instruction SFT experiments
-└── expert-iteration/   # Expert Iteration experiments; self-improvement for math reasoning
+├── basic-gpt/        # Character-level GPT built incrementally; notebooks, scripts
+├── gpt-2/            # GPT‑2 (124M) reproduction + improvements; training runs, notes
+├── bpe/              # BPE tokenizer from scratch; training/encoding optimizations, custom tokenizers
+├── llm-inference/    # LLM inference from scratch; sampling strategies, KV cache, speculative decoding
+├── sft/              # Supervised fine-tuning from scratch; reasoning & instruction SFT experiments
+├── expert-iteration/ # Expert Iteration experiments; self-improvement for math reasoning
+└── grpo/             # GRPO from scratch; Qwen2.5-Math-1.5B with verifiable rewards + ablation studies
 ```
 
 ## Basic-GPT
@@ -83,3 +84,10 @@ I implemented Expert Iteration from scratch following Stanford's [CS336 Assignme
 | **SFT (best)** | Filtered GPT traces, 2 epochs | **53.4%** |
 
 [Read more ->](expert-iteration/Readme.md)
+
+## GRPO
+I implemented Group Relative Policy Optimization (GRPO) from scratch and trained [Qwen2.5-Math-1.5B](https://huggingface.co/Qwen/Qwen2.5-Math-1.5B) with verifiable math rewards, reaching **~75% reward accuracy** on MATH validation (up from ~3% base model). Beyond just getting the implementation working, most importantly I ran a series of ablation studies to build intuition on what actually matters in GRPO training: learning rate, baseline subtraction, length normalization, std dev normalization, off-policy training, prompt template, and SFT checkpoint initialization.
+
+![Best GRPO run](grpo/results/best_run/best_run.png)
+
+[Read more ->](grpo/Readme.md)
