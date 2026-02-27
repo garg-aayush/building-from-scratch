@@ -12,6 +12,7 @@ There were 3 motivations for this project:
 2. Train with pure RL (no SFT) and see how high reward accuracy we can push.
 3. **Most importantly**, run ablation studies to understand and build intuition on what matters in GRPO training—the different design choices we can make and how to interpret the different metrics.
 
+You can find the blog post for this project here: https://aayushgarg.dev/posts/2026-02-26-grpo-from-scratch
 
 ## Table of Contents
 - [Training Loop](#training-loop)
